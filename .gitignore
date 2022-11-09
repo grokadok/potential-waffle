@@ -1,7 +1,6 @@
 /node_modules
 /vendor
 /database/diagram/*.bak
-/database/diagram/diagram*.mwb
 /database/mysql
 ssl.*
 /*lock*

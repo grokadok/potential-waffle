@@ -10,7 +10,7 @@ $login = __DIR__ . "/app/model/login.php";
 // $chat = __DIR__ . "/app/chat/chat.php";
 // $calendar = __DIR__ . "/app/calendar/calendar.php";
 // $caldav = __DIR__ . "/app/simplecaldav/SimpleCalDAVClient.php";
-$localenv = __DIR__ . "/config/env.php";
+$localenv = __DIR__ . "/config/env.php"; // not used anymore
 
 foreach ([
     $dbrequest,
@@ -59,11 +59,11 @@ class FWServer
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
             'worker_num' => 4, // Open 4 Worker Process
             'open_cpu_affinity' => true,
-            "open_http2_protocol" => true
-            //     //  'max_request' => 4, // Each worker process max_request is set to 4 times
-            //     //  'document_root'   => '',
-            //     //  'enable_static_handler' => true,
-            //     //  'daemonize' => false, // daems (TRUE / FALSE)
+            // "open_http2_protocol" => true // not compatible with stateless, only dispatch_modes 2 & 4
+            // 'max_request' => 4, // Each worker process max_request is set to 4 times
+            // 'document_root'   => '',
+            // 'enable_static_handler' => true,
+            // 'daemonize' => false, // daems (TRUE / FALSE)
         ]);
         $this->serv->on("Start", [$this, "onStart"]);
         $this->serv->on("WorkerStart", [$this, "onWorkStart"]);
