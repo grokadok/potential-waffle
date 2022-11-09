@@ -1,0 +1,82 @@
+/* Topbar */
+
+.topbar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    color: var(--nav-text);
+    opacity: 1;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: left 200ms ease, opacity var(--transition-pages),
+        top var(--transition-global), right var(--transition-global);
+    z-index: 40;
+    /* Dropdowns */
+    & ul {
+        display: flex;
+        padding: 0;
+        list-style: none;
+    }
+    & li {
+        background: rgba(0, 0, 0, 0.7);
+        transition: background var(--transition-nav-li);
+        &:hover {
+            background: rgba(21, 79, 138, 0.84);
+            transition: background 0s;
+        }
+    }
+    & > ul {
+        margin: 0;
+        & > li {
+            min-width: 3rem;
+            padding: 0 0.2rem;
+            line-height: 2.5rem;
+            text-align: center;
+            & ul {
+                position: absolute;
+                margin-left: -0.2rem;
+                flex-direction: column;
+                border-radius: 0 0 9px 9px;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity var(--transition-global);
+                & li {
+                    width: 7rem;
+                    line-height: 2rem;
+                }
+                & li:last-child {
+                    padding-bottom: 0.3rem;
+                    border-radius: 0 0 9px 9px;
+                }
+            }
+            &:hover ul {
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+        &:first-child > li:first-child {
+            padding: 0 0.2rem 0 1rem;
+            border-radius: 0 0 0 9px;
+        }
+    }
+    & > ul:last-child > li:last-child {
+        padding: 0 1rem 0 0.2rem;
+    }
+    &.loading {
+        top: -4rem;
+        opacity: 1;
+    }
+    &.hide {
+        display: none;
+    }
+}
+
+/* @media only screen and (max-width: 599px), screen and (max-height: 599px) {
+    .topbar {
+        background: transparent;
+        width: 4rem;
+    }
+} */

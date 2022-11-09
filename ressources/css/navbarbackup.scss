@@ -1,0 +1,212 @@
+:root {
+    --navbar-width: 4rem;
+}
+.navbar {
+    position: fixed;
+    top: calc(50% - 5rem);
+    left: 0;
+    list-style: none;
+    color: var(--nav-text);
+    user-select: none;
+    -webkit-user-select: none;
+    transition: var(--transition-global);
+    z-index: 40;
+}
+
+.nav-top {
+    bottom: 5rem;
+}
+
+.nav-logo {
+    display: flex;
+    position: relative;
+    height: 5rem;
+    width: 5rem;
+    border-radius: 0 9px 9px 0;
+    box-shadow: inset -2px -2px 0px 2px var(--bg-nav);
+    align-items: center;
+    background-color: var(--bg);
+    transition: var(--transition-global);
+}
+.nav-logo span {
+    width: 4.15rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 2.5rem;
+    padding-left: 0.6rem;
+    letter-spacing: 0.3ch;
+    color: var(--coolor2);
+    transition: var(--transition-global);
+}
+@supports (--css: variables) {
+    .nav-logo span {
+        background: var(--title-gradient);
+        background-size: 200% auto;
+        color: transparent;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: shine 15s linear infinite;
+        pointer-events: none;
+    }
+}
+.navbar:hover .nav-logo,
+.navbar:hover .nav-logo span {
+    width: 16rem;
+}
+
+.navbar > ul {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+}
+
+.nav-item {
+    display: flex;
+    height: 4rem;
+    width: 4rem;
+    background-color: var(--bg-nav);
+    transition: var(--transition-global);
+    cursor: pointer;
+}
+.navbar:hover .nav-item {
+    width: 12rem;
+}
+.navbar:hover .nav-dropdown {
+    transform: translate(7.99rem);
+}
+.nav-item:hover,
+.nav-item.selected {
+    background: var(--bg-nav-focus);
+    color: var(--nav-text-focus);
+}
+.nav-item:hover path,
+.nav-item.selected path {
+    fill: var(--accent);
+}
+/* .nav-item.has-dropdown:hover {
+  border-radius: 0;
+} */
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    color: var(--nav-text);
+}
+
+.nav-top > li:first-child {
+    border-radius: 0 9px 0 0;
+    box-shadow: 0px 1px var(--bg-nav);
+}
+.nav-bottom > #themeButton {
+    border-radius: 0 0 9px 0;
+    box-shadow: 0px -1px var(--bg-nav);
+}
+.nav-bottom li:nth-child(-n + 3):hover ~ #themeButton,
+.nav-dropdown:hover ~ #themeButton {
+    border-radius: 0;
+}
+
+.link-text {
+    margin-left: 1rem;
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: 350ms ease;
+}
+.navbar:hover .link-text {
+    opacity: 1;
+    transform: scaleX(1);
+}
+
+.nav-link svg {
+    min-width: 2rem;
+    max-width: 2rem;
+    margin: 1rem 1rem;
+}
+.fa-primary {
+    color: var(--accent);
+}
+.fa-secondary {
+    color: var(--accent-secondary);
+}
+.fa-primary,
+.fa-secondary {
+    transition: var(--transition-global);
+}
+
+.nav-dropdown {
+    position: absolute;
+    bottom: 0;
+    min-height: 12rem;
+    left: 4rem;
+    padding-block: 2rem;
+    padding-inline: 5rem;
+    background: var(--bg-nav-focus);
+    border-radius: 0px 9px 9px 0px;
+    box-shadow: inset -3px -2px 0px 3px var(--bg-nav);
+    opacity: 0;
+    transform-origin: left;
+    transition: transform var(--transition-global), opacity 200ms;
+    pointer-events: none;
+    z-index: 39;
+}
+
+ul.nav-bottom li:nth-child(-n + 3):hover ~ .nav-dropdown,
+.nav-dropdown:hover {
+    transform: translate(7.99rem);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.nav-section {
+    display: grid;
+    height: auto;
+    opacity: 1;
+    transition: var(--transition-global);
+}
+.nav-section:hover ~ .nav-dropdown {
+    opacity: 1;
+}
+.nav-section:hover ~ .nav-item {
+    background: var(--bg-nav-focus);
+    color: var(--nav-text-focus);
+}
+.nav-section.hide {
+    opacity: 0;
+}
+.nav-section.hide * {
+    height: 0;
+    padding: 0;
+    margin: 0;
+}
+
+.nav-section-title {
+    margin-top: 0;
+}
+
+@media only screen and (max-width: 599px), screen and (max-height: 599px) {
+}
+
+@media only screen and (min-width: 600px) and (min-height: 600px) {
+    .navbar.loading {
+        left: -4rem;
+        pointer-events: none;
+    }
+}
+
+/* -----
+SVG Icons - svgicons.sparkk.fr
+----- */
+
+.svg-icon path,
+.svg-icon polygon,
+.svg-icon rect {
+    fill: var(--accent-secondary);
+    transition: var(--transition-global);
+}
+
+.svg-icon circle {
+    stroke: var(--accent-secondary);
+    stroke-width: 1;
+}

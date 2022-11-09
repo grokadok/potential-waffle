@@ -1,0 +1,24 @@
+{
+    "name": "newapp",
+    "version": "1.0.0",
+    "description": "",
+    "main": "postcss.config.js",
+    "scripts": {
+        "postcss:watch": "postcss ressources/style.css -d public/assets/css/ --watch",
+        "minifyjs:custom": "uglifyjs-folder ressources/js -o public/assets/js/custom.min.js",
+        "minifyjs:vendor": "uglifyjs-folder ressources/vendor -o public/assets/js/vendor.min.js"
+    },
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "cssnano": "^5.1.12",
+        "postcss": "^8.4.14",
+        "postcss-cli": "^10.0.0",
+        "postcss-import": "^14.1.0",
+        "postcss-preset-env": "^7.7.2"
+    },
+    "dependencies": {
+        "uglify-js": "^3.16.2",
+        "uglifyjs-folder": "^3.1.2"
+    }
+}

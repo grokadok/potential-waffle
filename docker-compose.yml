@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+    server:
+        build:
+            context: .
+            dockerfile: dev.Dockerfile
+        container_name: server
+        environment:
+            AUTORELOAD_PROGRAMS: "swoole"
+            AUTORELOAD_ANY_FILES: 0
+            MYSQL_ADDON_HOST: "mariadb"
+            MYSQL_ADDON_USER: "user"
+            MYSQL_ADDON_PASSWORD: "devonly"
+            MYSQL_ADDON_DB: "db"
+            ISLOCAL: TRUE
+        restart: unless-stopped
+        volumes:
+            - ./server:/var/www
+            - ./config:/var/www/config
+            - ./app:/var/www/app
+            - ./public:/var/www/public
+            - ./ressources/js:/var/www/public/assets/js
+            - ./ressources/vendor:/var/www/public/assets/vendor
+            - ./ressources/fonts:/var/www/public/assets/fonts
+        ports:
+            - 8080:8080
+
+    mariadb:
+        image: mariadb:latest
+        container_name: mariadb
+        volumes:
+            - ./database/mysql:/var/lib/mysql
+        environment:
+            MYSQL_ROOT_PASSWORD: "devonly"
+            MYSQL_DATABASE: "db"
+            MYSQL_USER: "user"
+            MYSQL_PASSWORD: "devonly"
+        ports:
+            - 8087:3306
+
+    phpmyadmin:
+        image: phpmyadmin:latest
+        container_name: phpmyadmin
+        restart: always
+        ports:
+            - 8088:80
+        environment:
+            PMA_CONTROLUSER: "pma"
+            PMA_CONTROLPASS: "devonly"
+            PMA_HOST: "mariadb"
+            UPLOAD_LIMIT: "512M"

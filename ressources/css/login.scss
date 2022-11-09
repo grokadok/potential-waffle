@@ -1,0 +1,191 @@
+.login {
+    height: 100%;
+    bottom: 0;
+    opacity: 1;
+    transition: opacity var(--transition-pages);
+    & button.fadeout {
+        margin: 0;
+        height: 0;
+        padding: 0;
+    }
+}
+
+.login-header {
+    position: relative;
+    height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    background: var(--login-gradient);
+    transition: 300ms ease-out;
+    &.logged {
+        clip-path: circle(0%);
+    }
+}
+
+.login-footer {
+    height: 3rem;
+    display: flex;
+    flex-flow: column;
+    justify-content: center;
+    align-items: center;
+    background-color: var(--bg);
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 1;
+}
+@media only screen and (min-height: 600px) {
+    .login-footer {
+        height: calc(3rem + 10%);
+    }
+}
+
+.login-modal {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: all var(--transition-global), top 1.5s ease;
+    pointer-events: none;
+}
+@media only screen and (max-height: 599px) {
+    .login-modal {
+        justify-content: space-evenly;
+    }
+    .login-box-buddy {
+        height: 10rem;
+    }
+}
+
+.login-box {
+    position: relative;
+    width: 30rem;
+    padding-block: 1rem;
+    background-color: transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+    transition: all var(--transition-global), height 1500ms ease;
+    pointer-events: auto;
+    & .fadeout {
+        margin: 0;
+        padding: 0;
+        height: 0;
+        opacity: 0;
+        pointer-events: none;
+    }
+    & .field {
+        width: 75%;
+        &::after {
+            color: var(--gray1);
+        }
+    }
+    & > span:not(:first-of-type) {
+        color: var(--gray0);
+        text-align: center;
+        padding-inline: 2rem;
+    }
+}
+
+.login-title {
+    padding-left: 0.3ch;
+    color: var(--coolor2);
+    font-weight: bold;
+    font-size: 2.5rem;
+    filter: drop-shadow(4px 4px 1px rgba(0, 0, 0, 0.4));
+    letter-spacing: 0.3ch;
+    scale: 1.1 1;
+    text-transform: uppercase;
+    user-select: none;
+}
+
+@supports (--css: variables) {
+    .login-title {
+        background: var(--title-gradient);
+        background-size: 200% auto;
+        color: transparent;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: shine 15s linear infinite;
+    }
+}
+@keyframes shine {
+    to {
+        background-position: -200% center;
+    }
+}
+
+.login-content {
+    width: 70%;
+    transition: var(--transition-global);
+}
+
+.login-check {
+    position: absolute;
+    height: 1rem;
+    bottom: -1rem;
+    color: white;
+    font-weight: 300;
+    opacity: 0;
+    transition: opacity var(--transition-global);
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none;
+    & ul {
+        margin: 0.2rem;
+    }
+
+    &.up {
+        opacity: 1;
+    }
+    &.max {
+        text-shadow: var(--warning) 0 0 3px;
+        animation: blinker 1.5s ease infinite;
+    }
+
+    & li,
+    & span {
+        transform: scaleY(1);
+        transition: all var(--transition-global);
+    }
+
+    & li.fadeout {
+        opacity: 0;
+        transform: scaleY(0);
+        height: 0;
+        margin: 0;
+    }
+}
+
+.pw-list {
+    height: 7rem;
+    bottom: -7rem;
+}
+
+@keyframes blinker {
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@media only screen and (max-width: 599px), screen and (max-height: 599px) {
+    .login-header {
+        clip-path: circle(75%);
+    }
+    .login-box {
+        max-width: 90%;
+    }
+}
+@media only screen and (min-width: 600px) and (min-height: 600px) {
+    .login {
+        padding-top: calc(50vh - 50vw);
+    }
+    .login-header {
+        max-height: 100vw;
+        max-width: 100vh;
+        clip-path: circle(50%);
+    }
+}
