@@ -55,7 +55,7 @@ class FWServer
         $this->table->column("session", Table::TYPE_INT);
         $this->table->create();
         $this->serv->set([
-            // "dispatch_mode" => 1, // not compatible with onClose, for stateless server
+            "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
             'worker_num' => 4, // Open 4 Worker Process
             'open_cpu_affinity' => true,
