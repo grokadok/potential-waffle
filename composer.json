@@ -2,5 +2,8 @@
     "require-dev": {
         "openswoole/ide-helper": "~4.8.1",
         "eaglewu/swoole-ide-helper": "dev-master"
+    },
+    "require": {
+        "firebase/php-jwt": "^6.3"
     }
 }

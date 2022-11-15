@@ -9,7 +9,7 @@ services:
         environment:
             AUTORELOAD_PROGRAMS: "swoole"
             AUTORELOAD_ANY_FILES: 0
-            MYSQL_ADDON_HOST: "mariadb"
+            MYSQL_ADDON_HOST: "mysql"
             MYSQL_ADDON_USER: "user"
             MYSQL_ADDON_PASSWORD: "devonly"
             MYSQL_ADDON_DB: "db"
@@ -19,6 +19,7 @@ services:
             - ./server:/var/www
             - ./config:/var/www/config
             - ./app:/var/www/app
+            - ./vendor/firebase/php-jwt/src:/var/www/app/jwt
             - ./public:/var/www/public
             - ./ressources/js:/var/www/public/assets/js
             - ./ressources/vendor:/var/www/public/assets/vendor
@@ -26,9 +27,9 @@ services:
         ports:
             - 8080:8080
 
-    mariadb:
-        image: mariadb:latest
-        container_name: mariadb
+    mysql:
+        image: mysql:latest
+        container_name: mysql
         volumes:
             - ./database/mysql:/var/lib/mysql
         environment:
@@ -38,6 +39,18 @@ services:
             MYSQL_PASSWORD: "devonly"
         ports:
             - 8087:3306
+    # mariadb:
+    #     image: mariadb:latest
+    #     container_name: mariadb
+    #     volumes:
+    #         - ./database/mysql:/var/lib/mysql
+    #     environment:
+    #         MYSQL_ROOT_PASSWORD: "devonly"
+    #         MYSQL_DATABASE: "db"
+    #         MYSQL_USER: "user"
+    #         MYSQL_PASSWORD: "devonly"
+    #     ports:
+    #         - 8087:3306
 
     phpmyadmin:
         image: phpmyadmin:latest
@@ -48,5 +61,5 @@ services:
         environment:
             PMA_CONTROLUSER: "pma"
             PMA_CONTROLPASS: "devonly"
-            PMA_HOST: "mariadb"
+            PMA_HOST: "mysql"
             UPLOAD_LIMIT: "512M"
