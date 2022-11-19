@@ -65,11 +65,14 @@ class FWServer
     use JWTAuth;
     // use Tools;
 
+    private $appname;
+
     public function __construct(
         private $db = new DBRequest(),
         private $serv = new Server("0.0.0.0", 8080),
         private $table = new Table(1024),
     ) {
+        $this->appname = getenv('APP_NAME');
         $this->table->column("user", Table::TYPE_INT);
         $this->table->column("session", Table::TYPE_INT);
         $this->table->create();
@@ -277,7 +280,9 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
-                $jwt = $this->JWTVerify($request->header['authorization']);
+                $begin = microtime();
+                $jwt = $this->JWTVerify($request->header['authorization'], $this->appname);
+                print(PHP_EOL . '### CHECK TIME' . PHP_EOL . (microtime() - $begin) . PHP_EOL . '###' . PHP_EOL);
                 if (!$jwt) {
                     $response->status(401);
                     return $response->end();
