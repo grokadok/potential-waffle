@@ -6,8 +6,20 @@ trait Http
 {
     private function task($post)
     {
+        var_dump($post);
         try {
             $f = intval($post["f"]);
+
+            /////////////////////////////////////////////////////
+            // FLUTTER TEST  (1)
+            /////////////////////////////////////////////////////
+
+            if ($f === 1) {
+                $responseType = 'application/json';
+                $responseContent = json_encode(
+                    ['bite' => 3, 'chatte' => 8]
+                );
+            }
 
             /////////////////////////////////////////////////////
             // CHECK MAIL  (3)
