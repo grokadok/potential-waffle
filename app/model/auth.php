@@ -27,8 +27,56 @@ use Error;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
-trait JWTAuth
+trait Auth
 {
+    /**
+     * @param Array $options
+     * @param Array $options['email']
+     * @param Array $options['firstname']
+     * @param Array $options['lastname']
+     * @param Array $options['uid'] Firebase UID
+     */
+    private function addUser($options)
+    {
+        $into = 'email';
+        $values = '?';
+        $type = 's';
+        $content = [$options['email']];
+        if (!empty($options['firstname'])) {
+            $into .= ',first_name';
+            $values .= ',?';
+            $type .= 's';
+            $content[] = $options['firstname'];
+        }
+        if (!empty($options['lastname'])) {
+            $into .= ',last_name';
+            $values .= ',?';
+            $type .= 's';
+            $content[] = $options['lastname'];
+        }
+        $this->db->request([
+            'query' => "INSERT INTO user ($into) VALUES ($values);",
+            'type' => $type,
+            'content' => $content,
+            'array' => true,
+        ]);
+        $iduser = $this->db->request([
+            'query' => 'SELECT iduser FROM user WHERE email = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$options['email']],
+            'array' => true,
+        ])[0][0];
+
+        if ($options['firebase_uid'])
+            $this->db->request([
+                'query' => 'INSERT INTO firebase_has_user (iduser,uidfirebase,email,name) VALUES (?,?,?,?);',
+                'type' => 'isss',
+                'content' => [$iduser, $options['firebase_uid'], $options['email'], $options['firebase_name']],
+            ]);
+
+        return $iduser;
+    }
+
     // decode JWT
     private function JWTVerify($jwt, $appName)
     {
@@ -63,7 +111,6 @@ trait JWTAuth
         }
         return false;
     }
-
 
     private function refreshGoogleKeys()
     {

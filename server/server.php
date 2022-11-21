@@ -6,7 +6,7 @@ $functions = __DIR__ . "/app/model/functions.php";
 $dbrequest = __DIR__ . "/app/model/dbrequest.php";
 $http = __DIR__ . "/app/model/http.php";
 $websocket = __DIR__ . "/app/model/websocket.php";
-$login = __DIR__ . "/app/model/login.php";
+// $login = __DIR__ . "/app/model/login.php";
 $auth = __DIR__ . "/app/model/auth.php";
 // $jwt_jwt = __DIR__ . "/app/jwt/JWT.php";
 // $jwt_jwk = __DIR__ . "/app/jwt/JWK.php";
@@ -25,7 +25,7 @@ foreach ([
     $functions,
     $http,
     $websocket,
-    $login,
+    // $login,
     $auth,
     // $chat,
     // $calendar,
@@ -61,8 +61,8 @@ class FWServer
 {
     use Http;
     use Websocket;
-    use Login;
-    use JWTAuth;
+    // use Login;
+    use Auth;
     // use Tools;
 
     private $appname;
@@ -174,66 +174,66 @@ class FWServer
         Server $server,
         Frame $frame
     ) {
-        if (!$this->serv->table->exist($frame->fd)) {
-            echo "login request from socket {$frame->fd} on worker {$server->worker_id}" . PHP_EOL;
-            $data = json_decode(urldecode($frame->data), true);
-            $data["fd"] = $frame->fd;
-            $res = $this->login($data);
-            if ($res["status"] === 1) {
-                echo "login succeded for user {$res["user"]} at socket {$frame->fd} on session {$res["session"]}" .
-                    PHP_EOL;
-                $this->serv->table->set($frame->fd, [
-                    "session" => $res["session"],
-                    "user" => $res["user"],
-                ]);
-                $server->push($frame->fd, json_encode($res["data"]));
-            } else {
-                echo "login failed for {$frame->fd}" . PHP_EOL;
-                $server->push($frame->fd, json_encode($res["data"]));
-                $server->disconnect(
-                    $frame->fd,
-                    1000,
-                    "Login failed, sorry bro."
-                );
-            }
-        } else {
-            $session = $server->table->get($frame->fd, "session");
-            $user = $server->table->get($frame->fd, "user");
-            echo "Request from u" .
-                $user .
-                ":s" .
-                $session .
-                " : " .
-                $frame->data .
-                PHP_EOL;
-            try {
-                $task = [
-                    "fd" => $frame->fd,
-                    "session" => $session,
-                    "user" => $user,
-                    ...json_decode($frame->data, true),
-                ];
-                $response = $this->wsTask($task);
-                unset($task['content'], $task['session'], $task['user'], $task['fd']);
-                if (!empty($response)) {
-                    $message = json_encode([
-                        "response" => $response,
-                        ...$task,
-                    ]);
-                    $server->push($frame->fd, $message);
-                }
-            } catch (\Exception $e) {
-                echo "Exception reçue : " . $e->getMessage() . PHP_EOL;
-                $response = json_encode([
-                    "response" => [
-                        "fail" => "Ta mère en string.",
-                        "error" => $e->getMessage(),
-                    ],
-                    ...$task,
-                ]);
-                $server->push($frame->fd, $response);
-            }
-        }
+        // if (!$this->serv->table->exist($frame->fd)) {
+        //     echo "login request from socket {$frame->fd} on worker {$server->worker_id}" . PHP_EOL;
+        //     $data = json_decode(urldecode($frame->data), true);
+        //     $data["fd"] = $frame->fd;
+        //     $res = $this->login($data);
+        //     if ($res["status"] === 1) {
+        //         echo "login succeded for user {$res["user"]} at socket {$frame->fd} on session {$res["session"]}" .
+        //             PHP_EOL;
+        //         $this->serv->table->set($frame->fd, [
+        //             "session" => $res["session"],
+        //             "user" => $res["user"],
+        //         ]);
+        //         $server->push($frame->fd, json_encode($res["data"]));
+        //     } else {
+        //         echo "login failed for {$frame->fd}" . PHP_EOL;
+        //         $server->push($frame->fd, json_encode($res["data"]));
+        //         $server->disconnect(
+        //             $frame->fd,
+        //             1000,
+        //             "Login failed, sorry bro."
+        //         );
+        //     }
+        // } else {
+        //     $session = $server->table->get($frame->fd, "session");
+        //     $user = $server->table->get($frame->fd, "user");
+        //     echo "Request from u" .
+        //         $user .
+        //         ":s" .
+        //         $session .
+        //         " : " .
+        //         $frame->data .
+        //         PHP_EOL;
+        //     try {
+        //         $task = [
+        //             "fd" => $frame->fd,
+        //             "session" => $session,
+        //             "user" => $user,
+        //             ...json_decode($frame->data, true),
+        //         ];
+        //         $response = $this->wsTask($task);
+        //         unset($task['content'], $task['session'], $task['user'], $task['fd']);
+        //         if (!empty($response)) {
+        //             $message = json_encode([
+        //                 "response" => $response,
+        //                 ...$task,
+        //             ]);
+        //             $server->push($frame->fd, $message);
+        //         }
+        //     } catch (\Exception $e) {
+        //         echo "Exception reçue : " . $e->getMessage() . PHP_EOL;
+        //         $response = json_encode([
+        //             "response" => [
+        //                 "fail" => "Ta mère en string.",
+        //                 "error" => $e->getMessage(),
+        //             ],
+        //             ...$task,
+        //         ]);
+        //         $server->push($frame->fd, $response);
+        //     }
+        // }
     }
     public function onOpen(
         Server $server,
@@ -280,14 +280,16 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
-                $begin = microtime();
+                // $begin = microtime();
                 $jwt = $this->JWTVerify($request->header['authorization'], $this->appname);
-                print(PHP_EOL . '### CHECK TIME' . PHP_EOL . (microtime() - $begin) . PHP_EOL . '###' . PHP_EOL);
+                // print(PHP_EOL . '### CHECK TIME' . PHP_EOL . (microtime() - $begin) . PHP_EOL . '###' . PHP_EOL);
                 if (!$jwt) {
                     $response->status(401);
                     return $response->end();
                 }
-                $res = $this->task(json_decode($request->getContent(), true));
+                $res = $this->task(
+                    [...json_decode($request->getContent(), true), ...(array)$jwt,]
+                );
                 // $res = $this->task($request->post);
                 $response->header("Content-Type", $res["type"] ?? "");
                 $response->end(json_encode($res["content"]) ?? "");
