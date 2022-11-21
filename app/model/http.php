@@ -54,7 +54,7 @@ trait Http
 
                 $userData = $this->getUserData($iduser);
 
-                $responseContent = json_encode([
+                $responseContent = [
                     'f' => 1, // login approved
                     'defaultFamily' => $this->getDefaultFamily($iduser),
                     'lastname' => $userData['last_name'],
@@ -63,7 +63,7 @@ trait Http
                     'member' => $this->isMember($iduser),
                     'recipient' => $this->isRecipient($iduser),
                     'theme' => $userData['theme'],
-                ]);
+                ];
             }
 
             /////////////////////////////////////////////////////
