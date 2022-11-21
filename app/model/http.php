@@ -67,12 +67,19 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // CHECK MAIL  (3)
+            // CREATE FAMILY  (2)
             /////////////////////////////////////////////////////
 
-            if ($f === 3 && $post["a"]) {
+            if ($f === 2) {
+
+                // if family name already exist for user, return error
+
+                // else create family, send confirmation
             }
 
+            /////////////////////////////////////////////////////
+            // RETRIEVE FAMILIES  (3)
+            /////////////////////////////////////////////////////
 
 
             return [
