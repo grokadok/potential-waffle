@@ -35,6 +35,7 @@ trait Auth
      * @param Array $options['firstname']
      * @param Array $options['lastname']
      * @param Array $options['uid'] Firebase UID
+     * @return int iduser
      */
     private function addUser($options)
     {
