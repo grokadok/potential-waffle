@@ -69,19 +69,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 2) {
-                // $iduser = $this->getUserIdFromFirebase($post['sub']);
-                if ($this->familyExistsForUser($iduser, $post['n'])) {
-                    // if family name already exist for user, return error
-                    $responseContent = ['f' => 0];
-                } else {
-                    // else create family, send confirmation
-                    $this->db->request([
-                        'query' => 'INSERT INTO family (name,admin) VALUES (?,?);',
-                        'type' => 'si',
-                        'content' => [$post['n'], $iduser],
-                    ]);
-                    $responseContent = ['f' => 1];
-                }
+                $responseContent = ['f' => 2, 'family_created' => $this->createFamily($iduser, $post['n'])];
             }
 
             /////////////////////////////////////////////////////
@@ -97,7 +85,31 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 4) {
-                $responseContent = ['deleted' => $this->deleteFamily($iduser, $post['i'])];
+                $responseContent = ['f' => 4, 'deleted' => $this->deleteFamily($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // REQUEST FAMILY  (5)
+            /////////////////////////////////////////////////////
+
+            if ($f === 5) {
+                $responseContent = ['f' => 5, 'sent' => $this->requestAddToFamily($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // ADD USER TO FAMILY  (6)
+            /////////////////////////////////////////////////////
+
+            if ($f === 6) {
+                $responseContent = ['f' => 6, 'accepted' => $this->addUserToFamily($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // LEAVE FAMILY  (7)
+            /////////////////////////////////////////////////////
+
+            if ($f === 7) {
+                $responseContent = ['f' => 7, 'left' => $this->removeMemberFromFamily($iduser, $post['i'])];
             }
 
 
@@ -111,7 +123,88 @@ trait Http
     }
 
     /**
-     * Returns whether a family name is available for a user to create or not.
+     * Returns whether or not a user has a default family set.
+     */
+    private function userHasDefaultFamily(int $iduser)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM default_family WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]));
+    }
+
+    /**
+     * Creates family if name available and sets it as default for user if default not set.
+     */
+    private function createFamily(int $iduser, string $name)
+    {
+        // if family name is available for user
+        if ($this->familyExistsForUser($iduser, $name)) return false;
+
+        // create family
+        $this->db->request([
+            'query' => 'INSERT INTO family (name,admin) VALUES (?,?);',
+            'type' => 'si',
+            'content' => [$name, $iduser],
+        ]);
+
+        if (!$this->userHasDefaultFamily($iduser)) {
+            $idfamily = $this->db->request([
+                'query' => 'SELECT idfamily FROM family WHERE name = ? AND admin = ? LIMIT 1;',
+                'type' => 'si',
+                'content' => [$name, $iduser],
+                'array' => true,
+            ])[0][0];
+            $this->db->request([
+                'query' => 'INSERT INTO default_family (iduser, idfamily) VALUES (?,?);',
+                'type' => 'ii',
+                'content' => [$iduser, $idfamily],
+            ]);
+        }
+        return true;
+
+        // if user's first family, set default family for user
+    }
+
+    /**
+     * Joins family and sets as default for user if not set.
+     */
+    private function addUserToFamily(int $iduser, int $idfamily)
+    {
+        //if family name available for user
+        if ($this->familyExistsForUser($iduser, $this->getFamilyName($idfamily))) return false;
+        // insert into family members
+        $this->db->request([
+            'query' => 'INSERT INTO family_has_member (idfamily, iduser) VALUES ($idfamily, $iduser);',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]);
+        // TODO: send push to user added
+
+        return true;
+    }
+
+    /**
+     * Returns false if family name unavailble for user, else true for successful request.
+     */
+    private function requestAddToFamily(int $iduser, int $idfamily)
+    {
+        // if family name available to user
+        if ($this->familyExistsForUser($iduser, $this->getFamilyName($idfamily))) return false;
+        // insert into family_request
+        $this->db->request([
+            'query' => 'INSERT INTO family_request (iduser, idfamily) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+        ]);
+        // TODO: send push to family admin
+
+        return true;
+    }
+
+    /**
+     * Returns whether or not a family name is already used for a given user.
      */
     private function familyExistsForUser(int $iduser, string $name)
     {
@@ -169,7 +262,8 @@ trait Http
     }
 
     /**
-     * Returns all publications id for given family.
+     * Returns all publications id for given family, false if none.
+     * @return array|false
      */
     private function getAllFamilyPublications(int $idfamily)
     {
@@ -179,10 +273,9 @@ trait Http
             'content' => [$idfamily],
             'array' => true,
         ]);
-        $publicationsid = [];
-        foreach ($publications as $publication) $publicationsid[] = $publication['idpubilcation'];
-        unset($publications);
-        return $publicationsid;
+        if (empty($publications)) return false;
+        foreach ($publications as &$publication) $publication = $publication['idpubilcation'];
+        return $publications;
     }
 
     /**
@@ -313,9 +406,152 @@ trait Http
         // TODO: complete function depending on storage
     }
 
+    /**
+     * Returns associative array of user running recurring payments.
+     */
+    private function getUserRunningPayments(int $iduser)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idsubscription,amount,start FROM recurring_payment WHERE iduser = ? AND end IS NULL;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+    }
+
+    /**
+     * Removes publications from member in given family.
+     */
+    private function removePublicationsByFamilyMember(int $iduser, int $idfamily)
+    {
+        $publications = $this->db->request([
+            'query' => 'SELECT idpublication FROM publication WHERE author = ? AND idfamily = ?;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ]);
+        foreach ($publications as &$publication) $this->removePublication($publication);
+        return true;
+    }
+
+    /**
+     * Returns active subscriptions for given recipient, false if none.
+     */
+    private function getRecipientActiveSubscriptions(int $idrecipient)
+    {
+        $subscriptions = $this->db->request([
+            'query' => 'SELECT idsubscription FROM subscription WHERE idrecipient = ? AND end IS NULL;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ]);
+        if (empty($subscriptions)) return false;
+        foreach ($subscriptions as &$subscription) $subscription = $subscription[0];
+        return $subscriptions;
+    }
+
     private function removeMemberFromFamily(int $iduser, int $idfamily)
     {
         // TODO: handle member removal (recurring payment, etc.)
+
+        // if user has running subscription for family, return false
+        $subscriptions = $this->getUserRunningPayments($iduser);
+        if (!empty($subscriptions)) {
+            foreach ($subscriptions as &$subscription) $subscription = $subscription['idsubscription'];
+            $subscriptions = implode(',', $subscriptions);
+            $recipients = $this->db->request([
+                'query' => "SELECT idrecipient FROM subscription WHERE idsubscription IN ($subscriptions);",
+                'array' => true,
+            ]);
+            foreach ($recipients as &$recipient) $recipient = $recipient[0];
+            $recipients = implode(',', $recipients);
+            if (!empty($this->db->request([
+                'query' => "SELECT NULL FROM recipient WHERE idrecipient IN ($recipients) AND idfamily = ? LIMIT 1;",
+                'type' => 'i',
+                'content' => [$idfamily],
+                'array' => true,
+            ]))) return false;
+            // TODO: show warning message to oiginal requester, so that he can decide whether to proceed with removal or halt.
+            // if removal proceeds, cancel any recurring payment, then remove user from family.
+        }
+
+        $this->removePublicationsByFamilyMember($iduser, $idfamily);
+        $this->removeCommentsByFamilyMember($iduser, $idfamily);
+        $this->removeLikesByFamilyMember($iduser, $idfamily);
+
+        // remove user from family
+        $this->db->request([
+            'query' => 'DELETE FROM family_has_member WHERE idfamily = ? AND iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]);
+
+        // TODO: send push notification to removed member
+        return true;
+    }
+
+    /**
+     * Removes all likes from user for given family.
+     */
+    private function removeLikesByFamilyMember(int $iduser, int $idfamily)
+    {
+        $publications = $this->getAllFamilyPublications($idfamily);
+        if (empty($publications)) return;
+        $publications = implode(',', $publications);
+        $this->db->request([
+            'query' => "DELETE FROM publication_has_like WHERE iduser = ? AND idpublication IN ($publications);",
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        $comments = $this->db->request([
+            'query' => "SELECT idcomment FROM publication_has_comment WHERE idpublication IN ($publications);",
+            'array' => true,
+        ]);
+        if (empty($comments)) return;
+        $comments = implode(',', $comments);
+        $this->db->request([
+            'query' => "DELETE FROM comment_has_like WHERE iduser = ? AND idcomment IN ($comments);",
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ]);
+        return;
+    }
+
+    /**
+     * Returns comments' id for given user, false if none.
+     * @return array|false
+     */
+    private function getUserComments(int $iduser)
+    {
+        $comments = $this->db->request([
+            'query' => 'SELECT idcomment FROM comment WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ]);
+        if (empty($comments)) return false;
+        foreach ($comments as &$comment) $comment = $comment[0];
+        return $comments;
+    }
+
+    /**
+     * Removes every comment from user in publications of given family.
+     */
+    private function removeCommentsByFamilyMember(int $iduser, int $idfamily)
+    {
+        $comments = $this->getUserComments($iduser);
+        if (!$comments) return;
+        $comments = implode(',', $comments);
+        $publications = $this->getAllFamilyPublications($idfamily);
+        if (!$publications) return;
+        $publications = implode(',', $publications);
+        $targetComments = $this->db->request([
+            'query' => "SELECT idcomment FROM publication_has_comment WHERE idpublication IN ($publications) AND idcomment IN ($comments);",
+            'array' => true,
+        ]);
+        if (empty($targetComments)) return;
+        foreach ($targetComments as $comment) $this->removeComment($comment);
+        return;
     }
 
     private function removeGazette(int $idgazette)
@@ -325,13 +561,14 @@ trait Http
 
     /**
      * Delete a family and all it's data.
+     * @return int Value > 0 = days before deletion, 0 = deleted, -1 = user not admin, -2 = running subscription
      */
     private function deleteFamily(int $iduser, int $idfamily)
     {
         // if user is admin of family
-        if (!$this->isAdminOfFamily($iduser, $idfamily)) return false;
+        if (!$this->isAdminOfFamily($iduser, $idfamily)) return -1;
         // if no subscription is running for family recipients
-        if ($this->familyHasSubscriptions($idfamily)) return false;
+        if ($this->familyHasSubscriptions($idfamily)) return -2;
         // mark family for removal if gazettes (a month) or members (a week), else remove immediatly
         if ($this->familyHasGazettes($idfamily)) {
             $this->db->request([
@@ -356,7 +593,7 @@ trait Http
         ]);
 
         $this->removeFamilyData($idfamily);
-        return true;
+        return 0;
     }
 
     /**
@@ -378,11 +615,11 @@ trait Http
     {
         // get family recipients
         $recipients = $this->getFamilyRecipients($idfamily);
-        $idrecipients = [];
-        foreach ($recipients as $recipient) $idrecipients[] = $recipient['idrecipient'];
-        $idrecipients = implode(',', $idrecipients);
+        if (empty($recipients)) return false;
+        foreach ($recipients as &$recipient) $recipient = $recipient['idrecipient'];
+        $recipients = implode(',', $recipients);
         return !empty($this->db->request([
-            'query' => "SELECT NULL FROM gazettes WHERE idrecipient IN ($idrecipients) LIMIT 1;",
+            'query' => "SELECT NULL FROM gazettes WHERE idrecipient IN ($recipients) LIMIT 1;",
         ]));
     }
 
@@ -411,11 +648,11 @@ trait Http
             'content' => [$idfamily],
             'array' => true,
         ]);
-        $idmembers = [];
-        foreach ($members as $member) $idmembers[] = $member[0];
-        $idmembers = implode(',', $idmembers);
+        if (empty($members)) return false;
+        foreach ($members as &$member) $member = $member[0];
+        $members = implode(',', $members);
         return $this->db->request([
-            'query' => "SELECT iduser,first_name,last_name FROM user WHERE iduser IN ($idmembers);",
+            'query' => "SELECT iduser,first_name,last_name FROM user WHERE iduser IN ($members);",
         ]);
     }
 
