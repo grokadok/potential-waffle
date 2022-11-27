@@ -112,6 +112,13 @@ trait Http
                 $responseContent = ['f' => 7, 'left' => $this->removeMemberFromFamily($iduser, $post['i'])];
             }
 
+            /////////////////////////////////////////////////////
+            // GET FAMILY RECIPIENTS  (8)
+            /////////////////////////////////////////////////////
+
+            if ($f === 8) {
+                $responseContent = ['f' => 8, 'recipients' => $this->getFamilyRecipientsData($post['i'])];
+            }
 
             return [
                 "type" => $responseType,
@@ -230,7 +237,6 @@ trait Http
 
         if (!empty($recipients))
             foreach ($recipients as $recipient) $gazettes = $this->getRecipientGazettes($recipient['idrecipient']);
-
         if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->removeGazette($gazette['idgazette']);
         unset($recipients, $gazettes);
 
@@ -666,6 +672,21 @@ trait Http
             'type' => 'i',
             'content' => [$idfamily],
         ]);
+    }
+
+    /**
+     * Returns family recipients' data.
+     */
+    private function getFamilyRecipientsData(int $idfamily)
+    {
+        $recipients = $this->getFamilyRecipients($idfamily);
+        if (empty($recipients)) return false;
+        foreach ($recipients as &$recipient) {
+            $user = $this->getUserData($recipient['iduser']);
+            $recipient['first_name'] = $user['first_name'];
+            $recipient['last_name'] = $user['last_name'];
+        }
+        return $recipients;
     }
 
     /**
