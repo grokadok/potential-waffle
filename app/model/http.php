@@ -54,14 +54,11 @@ trait Http
                 }
 
                 $userData = $this->getUserData($iduser);
-                // $defaultFamilyId = $this->getUserDefaultFamily($iduser);
-                // TODO: get subscription types
 
                 $responseContent = [
                     'f' => 1, // login approved
-                    // 'defaultFamilyId' => $defaultFamilyId,
-                    // 'defaultFamilyName' => $defaultFamilyId ? $this->getFamilyName($defaultFamilyId) : null,
                     'families' => $this->getUserFamiliesData($iduser),
+                    'id' => $iduser,
                     'lastname' => $userData['last_name'],
                     'firstname' => $userData['first_name'],
                     'admin' => $this->isAdmin($iduser),
@@ -121,11 +118,11 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // LEAVE FAMILY  (7)
+            // REMOVE MEMBER FROM FAMILY  (7)
             /////////////////////////////////////////////////////
 
             if ($f === 7) {
-                $responseContent = ['f' => 7, 'left' => $this->removeMemberFromFamily($iduser, $post['i'])];
+                $responseContent = ['f' => 7, 'removed' => $this->removeMemberFromFamily($iduser, $post['i'], $post['m'])];
             }
 
             /////////////////////////////////////////////////////
@@ -133,7 +130,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 8) {
-                $responseContent = ['f' => 8, 'recipients' => $this->getFamilyRecipientsData($post['i'])];
+                $responseContent = ['f' => 8, 'recipients' => $this->getFamilyRecipients($post['i'], $post['u'] ?? null)];
             }
 
             /////////////////////////////////////////////////////
@@ -153,15 +150,27 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // GET SUBSCRIPTION SCREEN DATA (11)
+            // DELETE RECIPIENT (11)
             /////////////////////////////////////////////////////
 
             if ($f === 11) {
-                // get families id/names
-                // get recipients id/names
-                // get subscription types[name,price]
-                // get recipient's active subscription
-                // $responseContent= ['f'=>11,'recipient'=>$this->];
+                $responseContent = ['f' => 11, 'deleted' => $this->removeRecipient($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET SUBSCRIPTION'S CURRENT MONTH MEMBERS' SHARE (12)
+            /////////////////////////////////////////////////////
+
+            if ($f === 12) {
+                $responseContent = ['f' => 12, 'amount' => $this->getSubscriptionMembersShare($post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET MEMBER DATA (13)
+            /////////////////////////////////////////////////////
+
+            if ($f === 13) {
+                $responseContent = ['f' => 13, 'member' => $this->getFamilyMemberData($post['i'], $post['m'])];
             }
 
             return [

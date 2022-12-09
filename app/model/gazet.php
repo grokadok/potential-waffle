@@ -42,6 +42,11 @@ trait Gazet
             'content' => [$name, $iduser],
             'array' => true,
         ])[0][0];
+        $this->db->request([
+            'query' => 'INSERT INTO family_has_member (idfamily, iduser) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]);
 
         // if user's first family, set default family for user
         if (!$this->userHasDefaultFamily($iduser)) {
@@ -104,16 +109,15 @@ trait Gazet
 
         // create recipient
         $this->db->request([
-            'query' => 'INSERT INTO recipient (idfamily,display_name,birth_date,idaddress,added_by) VALUES (?,?,?,?,?);',
+            'query' => 'INSERT INTO recipient (idfamily,display_name,birth_date,idaddress,referent) VALUES (?,?,?,?,?);',
             'type' => 'issii',
             'content' => [$idfamily, $displayName, $recipient['birth_date'], $idaddress, $iduser],
         ]);
-        return $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
+        return [...$this->db->request([
+            'query' => 'SELECT idrecipient,display_name,referent FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $displayName],
-            'array' => true,
-        ])[0][0];
+        ])[0], 'subscription' => false];
     }
 
     /**
@@ -135,7 +139,7 @@ trait Gazet
             ]);
             return ['state' => 31];
         }
-        if ($this->getFamilyMembers($idfamily)) {
+        if ($this->familyHasOtherMembers($iduser, $idfamily)) {
             $this->db->request([
                 'query' => 'UPDATE family SET end = DATE_ADD(NOW(),INTERVAL 7 DAY) WHERE idfamily = ? LIMIT 1;',
                 'type' => 'i',
@@ -180,11 +184,20 @@ trait Gazet
     {
         // get family recipients
         $recipients = $this->getFamilyRecipients($idfamily);
-        if (!$recipients) return false;
+        if (empty($recipients)) return false;
         foreach ($recipients as &$recipient) $recipient = $recipient['idrecipient'];
         $recipients = implode(',', $recipients);
         return !empty($this->db->request([
             'query' => "SELECT NULL FROM gazette WHERE idrecipient IN ($recipients) LIMIT 1;",
+        ]));
+    }
+
+    private function familyHasOtherMembers(int $iduser, int $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_has_member WHERE idfamily = ? AND iduser != ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
         ]));
     }
 
@@ -196,7 +209,7 @@ trait Gazet
         // get family recipients
         $recipients = $this->getFamilyRecipients($idfamily);
         // get recipient subscription
-        if (!$recipients) return false;
+        if (empty($recipients)) return false;
         $idrecipients = [];
         foreach ($recipients as $recipient) $idrecipients[] = $recipient['idrecipient'];
         $idrecipients = implode(',', $idrecipients);
@@ -222,6 +235,24 @@ trait Gazet
         return $publications;
     }
 
+    private function getFamilyMemberData(int $idfamily, int $idmember)
+    {
+        if (!$this->isMemberOfFamily($idmember, $idfamily)) return false;
+        // get member data 
+        $memberData = $this->getUserData($idmember);
+        // if recipient
+        if (!$this->isRecipientOfFamily($idmember, $idfamily)) return $memberData;
+        // get recipient data as well
+        $idrecipient = $this->db->request([
+            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idmember],
+            'array' => true,
+        ])[0][0];
+        $memberData['recipient'] = $this->getRecipientData($idrecipient);
+        return $memberData;
+    }
+
     private function getFamilyMembers(int $idfamily)
     {
         $members = $this->db->request([
@@ -230,7 +261,7 @@ trait Gazet
             'content' => [$idfamily],
             'array' => true,
         ]);
-        if (empty($members)) return false;
+        if (empty($members)) return [];
         foreach ($members as &$member) $member = $member[0];
         $members = implode(',', $members);
         return $this->db->request([
@@ -272,30 +303,56 @@ trait Gazet
     }
 
     /**
-     * Returns id and user id of recipients from a family.
+     * Returns recipients' data from a family.
      */
     private function getFamilyRecipients(int $idfamily, int $iduser = null)
     {
         $recipients = $this->db->request([
-            'query' => 'SELECT idrecipient,display_name,added_by FROM recipient WHERE idfamily = ?;',
+            'query' => 'SELECT idrecipient,display_name,referent FROM recipient WHERE idfamily = ? ORDER BY display_name;',
             'type' => 'i',
             'content' => [$idfamily],
         ]);
-        if (empty($recipients)) return false;
+        if (empty($recipients)) return [];
         foreach ($recipients as &$recipient) {
-            if ($iduser) $recipient['added_by'] = $recipient['added_by'] === $iduser ? true : false;
+            // if provided iduser and user not admin, set if recipient was added by user
+            // if ($iduser) $recipient['referent'] = $recipient['referent'] === $iduser ? true : false;
+            // set recipient's subscriptions
             $recipient['subscription'] = $this->getRecipientActiveSubscription($recipient['idrecipient']);
         }
         return $recipients;
     }
 
+    private function getRecipientAddress(int $idrecipient)
+    {
+        $idaddress = $this->db->request([
+            'query' => 'SELECT idaddress FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0];
+        return $this->db->request([
+            'query' => 'SELECT first_name,last_name,phone,field1,postal,city,state,country FROM address WHERE idaddress = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idaddress],
+        ])[0];
+    }
+
+    private function getRecipientData(int $idrecipient)
+    {
+        return [...$this->db->request([
+            'query' => 'SELECT display_name FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+        ]), ...$this->getRecipientAddress($idrecipient)];
+    }
+
     /**
-     * Returns family recipients' data.
+     * Returns family recipients' precise data. // useless ?
      */
     private function getFamilyRecipientsData(int $idfamily)
     {
         $recipients = $this->getFamilyRecipients($idfamily);
-        if (!$recipients) return false;
+        if (empty($recipients)) return false;
         foreach ($recipients as &$recipient) {
             $user = $this->getUserData($recipient['iduser']);
             $recipient['first_name'] = $user['first_name'];
@@ -336,16 +393,26 @@ trait Gazet
     }
 
     /**
-     * Returns active subscriptions for given recipient, false if none.
+     * Returns active subscription id and type for given recipient, false if none.
+     * @return array|false
      */
     private function getRecipientActiveSubscription(int $idrecipient)
     {
         return $this->db->request([
-            'query' => 'SELECT idsubscription FROM subscription WHERE idrecipient = ? AND end IS NULL LIMIT 1;',
+            'query' => 'SELECT idsubscription,idsubscription_type FROM subscription WHERE idrecipient = ? AND end IS NULL LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+        ])[0] ?? false;
+    }
+
+    private function getRecipientFamily(int $idrecipient)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idfamily FROM recipient WHERE idrecipient = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idrecipient],
             'array' => true,
-        ])[0][0] ?? false;
+        ])[0][0];
     }
 
     /**
@@ -358,6 +425,35 @@ trait Gazet
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
+    }
+
+    private function getSubscriptionMembersShare(int $idrecipient)
+    {
+        // TODO: code getSubscriptionMembersShare
+        $idsubscription = $this->getRecipientActiveSubscription($idrecipient);
+        if (!$idsubscription) return false;
+        // get current month => use last_day(now()) in mysql
+        $memberPayments = [];
+        // get members having recurring payment with end = null or > current month
+        $payments = $this->db->request([
+            'query' => 'SELECT amount FROM user_has_payment WHERE idsubcription = ? AND date > DATE_ADD(DATE(LAST_DAY(NOW() - INTERVAL 1 MONTH)), INTERVAL 1 DAY) AND date < DATE_ADD(LAST_DAY(NOW()), INTERVAL 1 DAY);',
+            'type' => 'i',
+            'content' => [$idsubscription],
+            'array' => true,
+        ]);
+        if (!empty($payments))
+            foreach ($payments as $payment) $memberPayments[] = $payment[0];
+        unset($payment);
+        // get members having payment with date in current month
+        $payments = $this->db->request([
+            'query' => 'SELECT amount FROM recurring_payment WHERE idsubscription = ? AND (end IS NULL OR end > LAST_DAY(NOW()));',
+            'type' => 'i',
+            'content' => [$idsubscription],
+            'array' => true,
+        ]);
+        if (!empty($payments)) foreach ($payments as $payment) $memberPayments[] = $payment[0];
+        if (empty($memberPayments)) return false;
+        return array_sum($memberPayments);
     }
 
     private function getSubscriptionScreenDate(int $idrecipient)
@@ -448,6 +544,9 @@ trait Gazet
         foreach (array_keys($families) as $key) {
             $families[$key]['name'] = $this->getFamilyName($key);
             $families[$key]['id'] = $key;
+            $families[$key]['admin'] = $families[$key]['admin'] ?? false;
+            $families[$key]['member'] = $families[$key]['member'] ?? false;
+            $families[$key]['recipient'] = $families[$key]['recipient'] ?? false;
             $families[$key]['default'] = $key === $default ? true : false;
             $response[] = $families[$key];
         }
@@ -463,7 +562,7 @@ trait Gazet
         if (empty($families)) return false;
         foreach ($families as &$family) {
             // get recipients + active subscription
-            $family['recipients'] = $this->getFamilyRecipients($family['id']);
+            $family['recipients'] = $this->getFamilyRecipients($family['id'], $iduser);
             // get members
             $family['members'] = $this->getFamilyMembers($family['id']);
         }
@@ -515,13 +614,20 @@ trait Gazet
      */
     private function getUserRunningPayments(int $iduser)
     {
-        return $this->db->request([
-            'query' => 'SELECT idsubscription,amount,start FROM recurring_payment WHERE iduser = ? AND end IS NULL;',
+        return [...$this->db->request([
+            'query' => 'SELECT idsubscription,amount FROM recurring_payment WHERE iduser = ? AND (end IS NULL OR end > DATE(NOW()));',
             'type' => 'i',
             'content' => [$iduser],
-        ]);
+        ]), ...$this->db->request([
+            'query' => 'SELECT idsubscription,amount FROM user_has_payment WHERE iduser = ? AND date > DATE(NOW());',
+            'type' => 'i',
+            'content' => [$iduser],
+        ])];
     }
 
+    /**
+     * Returns true if user is admin of any family.
+     */
     private function isAdmin(int $iduser)
     {
         return !empty($this->db->request([
@@ -531,6 +637,9 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if user is admin of given family.
+     */
     private function isAdminOfFamily(int $iduser, int $idfamily)
     {
         return !empty($this->db->request([
@@ -540,6 +649,9 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if given family is default for given user.
+     */
     private function isDefaultForUser(int $iduser, int $idfamily)
     {
         return !empty($this->db->request([
@@ -549,6 +661,9 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if user is member of any family.
+     */
     private function isMember(int $iduser)
     {
         return !empty($this->db->request([
@@ -558,6 +673,9 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if user is member of given family;
+     */
     private function isMemberOfFamily(int $iduser, int $idfamily)
     {
         return !empty($this->db->request([
@@ -567,6 +685,9 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if user is recipient of any family.
+     */
     private function isRecipient(int $iduser)
     {
         return !empty($this->db->request([
@@ -576,12 +697,28 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns true if given user is recipient of given family.
+     */
     private function isRecipientOfFamily(int $iduser, int $idfamily)
     {
         return !empty($this->db->request([
             'query' => 'SELECT NULL FROM recipient WHERE idfamily = ? AND iduser = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idfamily, $iduser],
+        ]));
+    }
+
+    /**
+     * Returns true is given user is referent for given recipient.
+     */
+    private function isReferent(int $iduser, int $idrecipient)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM recipient WHERE idrecipient = ? AND referent = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idrecipient, $iduser],
+            'array' => true,
         ]));
     }
 
@@ -595,6 +732,24 @@ trait Gazet
             'type' => 'i',
             'content' => [$idrecipient],
         ]));
+    }
+
+    /**
+     * Removes address if not linked to any recipient.
+     */
+    private function removeAddress($idaddress)
+    {
+        if (!empty($this->db->request([
+            'query' => 'SELECT NULL FROM recipient WHERE idaddress = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idaddress],
+        ]))) return false;
+        $this->db->request([
+            'query' => 'DELETE FROM address WHERE idaddress = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idaddress],
+        ]);
+        return true;
     }
 
     /**
@@ -682,7 +837,7 @@ trait Gazet
         // if family has gazettes, remove them
         $recipients = $this->getFamilyRecipients($idfamily);
 
-        if ($recipients)
+        if (!empty($recipients))
             foreach ($recipients as $recipient) $gazettes = $this->getRecipientGazettes($recipient['idrecipient']);
         if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->removeGazette($gazette['idgazette']);
         unset($recipients, $gazettes);
@@ -735,12 +890,15 @@ trait Gazet
         return;
     }
 
-    private function removeMemberFromFamily(int $iduser, int $idfamily)
+    private function removeMemberFromFamily(int $iduser, int $idfamily, int $idmember)
     {
         // TODO: handle member removal (recurring payment, etc.)
 
-        // if user has running subscription for family, return false
-        $subscriptions = $this->getUserRunningPayments($iduser);
+        // if user != member or not admin of family, return false
+        if (!$this->isAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return false;
+
+        // if member has running subscription for family, return false
+        $subscriptions = $this->getUserRunningPayments($idmember);
         if (!empty($subscriptions)) {
             foreach ($subscriptions as &$subscription) $subscription = $subscription['idsubscription'];
             $subscriptions = implode(',', $subscriptions);
@@ -756,22 +914,32 @@ trait Gazet
                 'content' => [$idfamily],
                 'array' => true,
             ]))) return false;
-            // TODO: show warning message to oiginal requester, so that he can decide whether to proceed with removal or halt.
-            // if removal proceeds, cancel any recurring payment, then remove user from family.
+            // TODO: show warning message to user, so that he can decide whether to proceed with removal or halt.
+            // if removal proceeds, cancel any recurring payment, then remove member from family.
         }
 
-        $this->removePublicationsByFamilyMember($iduser, $idfamily);
-        $this->removeCommentsByFamilyMember($iduser, $idfamily);
-        $this->removeLikesByFamilyMember($iduser, $idfamily);
+        // TODO: keep/archive member's family data for some time in case user joins again in the future ?
+        $this->removePublicationsByFamilyMember($idmember, $idfamily);
+        $this->removeCommentsByFamilyMember($idmember, $idfamily);
+        $this->removeLikesByFamilyMember($idmember, $idfamily);
+
+        // TODO: if admin is leaving family, let him/she designate the next admin
+
+        // TODO: if leaver is referent for recipient(s) AND not admin, set admin referent with notification, 
+
 
         // remove user from family
         $this->db->request([
             'query' => 'DELETE FROM family_has_member WHERE idfamily = ? AND iduser = ? LIMIT 1;',
             'type' => 'ii',
-            'content' => [$idfamily, $iduser],
+            'content' => [$idfamily, $idmember],
         ]);
 
         // TODO: send push notification to removed member
+
+        // TODO: if family empty, remove family.
+
+
         return true;
     }
 
@@ -834,10 +1002,32 @@ trait Gazet
 
     private function removeRecipient(int $iduser, int $idrecipient)
     {
-        // TODO: 
-        // if user admin
-        // if no subscription running
+        // TODO: check if not too late to remove recipient before next gazette.
+        $idfamily = $this->getRecipientFamily($idrecipient);
+        // if user admin or referent
+        if (!$this->isAdminOfFamily($iduser, $idfamily) && !$this->isReferent($iduser, $idrecipient)) return false;
+
+        // if recipient has running subscription
+        $subscription = $this->getRecipientActiveSubscription($idrecipient);
+        if ($subscription) {
+            // TODO: cancel future payments for subscription.
+        }
+
         // remove recipient and its data
+        // TODO: remove gazettes from storage if recipient is not a user.
+        $idaddress = $this->db->request([
+            'query' => 'SELECT idaddress FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0];
+        $this->db->request([
+            'query' => 'DELETE FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+        ]);
+        $this->removeAddress($idaddress);
+        return true;
     }
 
     /**
@@ -891,7 +1081,7 @@ trait Gazet
 
     private function updateRecipient(int $iduser, int $idrecipient)
     {
-        // TODO: if user = admin or added_by, update recipients data
+        // TODO: if user = admin or referent, update recipients data
     }
 
     /**
