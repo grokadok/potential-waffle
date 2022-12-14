@@ -2,23 +2,24 @@
 
 namespace bopdev;
 
-$functions = __DIR__ . "/app/model/functions.php";
-$dbrequest = __DIR__ . "/app/model/dbrequest.php";
-$http = __DIR__ . "/app/model/http.php";
-$websocket = __DIR__ . "/app/model/websocket.php";
-// $login = __DIR__ . "/app/model/login.php";
-$auth = __DIR__ . "/app/model/auth.php";
-// $jwt_jwt = __DIR__ . "/app/jwt/JWT.php";
-// $jwt_jwk = __DIR__ . "/app/jwt/JWK.php";
-// $jwt_key = __DIR__ . "/app/jwt/Key.php";
-// $jwt_before = __DIR__ . "/app/jwt/BeforeValidException.php";
-// $jwt_cached = __DIR__ . "/app/jwt/CachedKeySet.php";
-// $jwt_expired = __DIR__ . "/app/jwt/ExpiredException.php";
-// $jwt_signature = __DIR__ . "/app/jwt/SignatureInvalidException.php";
-// $chat = __DIR__ . "/app/chat/chat.php";
-// $calendar = __DIR__ . "/app/calendar/calendar.php";
-// $caldav = __DIR__ . "/app/simplecaldav/SimpleCalDAVClient.php";
-$localenv = __DIR__ . "/config/env.php"; // not used anymore
+$functions = __DIR__ . '/app/model/functions.php';
+$dbrequest = __DIR__ . '/app/model/dbrequest.php';
+$http = __DIR__ . '/app/model/http.php';
+$websocket = __DIR__ . '/app/model/websocket.php';
+// $login = __DIR__ . '/app/model/login.php';
+$auth = __DIR__ . '/app/model/auth.php';
+// $jwt_jwt = __DIR__ . '/app/jwt/JWT.php';
+// $jwt_jwk = __DIR__ . '/app/jwt/JWK.php';
+// $jwt_key = __DIR__ . '/app/jwt/Key.php';
+// $jwt_before = __DIR__ . '/app/jwt/BeforeValidException.php';
+// $jwt_cached = __DIR__ . '/app/jwt/CachedKeySet.php';
+// $jwt_expired = __DIR__ . '/app/jwt/ExpiredException.php';
+// $jwt_signature = __DIR__ . '/app/jwt/SignatureInvalidException.php';
+// $chat = __DIR__ . '/app/chat/chat.php';
+// $calendar = __DIR__ . '/app/calendar/calendar.php';
+// $caldav = __DIR__ . '/app/simplecaldav/SimpleCalDAVClient.php';
+$s3 = __DIR__ . '/app/model/s3.php';
+$localenv = __DIR__ . '/config/env.php'; // not used anymore
 
 foreach ([
     $dbrequest,
@@ -37,10 +38,13 @@ foreach ([
     // $jwt_cached,
     // $jwt_expired,
     // $jwt_signature,
+    $s3,
 ] as $value) {
     require_once $value;
     unset($value);
 };
+// require 'vendor/autoload.php';
+unset($dbrequest, $functions, $http, $websocket, $auth, $s3);
 if (getenv('ISLOCAL')) {
     require_once $localenv;
     unset($localenv);
@@ -56,6 +60,9 @@ use Swoole\WebSocket\Frame;
 // use Firebase\JWT\JWT;
 // use Firebase\JWT\Key;
 use bopdev\DBRequest;
+use bopdev\S3Client;
+// use Aws\S3\S3Client as S3;
+// use Aws\Exception\AwsException;
 
 class FWServer
 {
@@ -69,6 +76,7 @@ class FWServer
 
     public function __construct(
         private $db = new DBRequest(),
+        private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
         private $table = new Table(1024),
     ) {
@@ -316,6 +324,13 @@ class FWServer
         // print((isset($test) ? 'set' : 'unset') . PHP_EOL);
         // print((empty($test) ? 'empty' : 'not empty') . PHP_EOL);
         // change session management to stateless asap with jwt or use dedicated library.
+
+        // s3 test
+        $test = $this->s3->objectExist('foo');
+        var_dump($test);
+
+
+        // Using operation methods creates a command implicitly
         if ($this->db->test() === true) {
             // $this->db->request([
             //     "query" => "DELETE FROM session;", // where worker no longer exist or equal to this worker
