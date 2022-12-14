@@ -304,7 +304,7 @@ class FWServer
             } elseif ($request_uri === "/" || $request_uri === "/index.php") {
                 $theme = "light";
                 $session = "";
-                require __DIR__ . "/public/index.php";
+                // require __DIR__ . "/public/index.php";
             }
         }
     }
