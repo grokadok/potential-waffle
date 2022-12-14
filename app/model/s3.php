@@ -26,7 +26,7 @@ class S3Client
 
     // TODO: add create/(update)/delete bucket functions
 
-    public function createBucket(?string $name)
+    public function createBucket(?string $name = null)
     {
         try {
             $result = $this->client->createBucket([
@@ -66,6 +66,9 @@ class S3Client
 
     public function listObjects(string $bucket)
     {
+        return $this->client->listObjects([
+            'Bucket' => $bucket,
+        ]);
     }
 
     public function bucketExist(string $bucket, bool $accept403 = false)
@@ -76,7 +79,7 @@ class S3Client
             return print($e->getMessage() . PHP_EOL);
         }
     }
-    public function objectExist(string $key, ?string $bucket, ?bool $includeDeleteMarkers = false)
+    public function objectExist(string $key, ?string $bucket = null, ?bool $includeDeleteMarkers = false)
     {
         try {
             return $this->client->doesObjectExistV2($bucket ?? $this->bucket, $key);
@@ -85,10 +88,10 @@ class S3Client
         }
     }
 
-    public function copy(string $fromBucket, string $fromKey, string $destBucket, string $destKey)
+    public function copy(string $fromKey, string $destKey, ?string $fromBucket = null, ?string $destBucket = null)
     {
         try {
-            return $this->client->copy($fromBucket, $fromKey, $destBucket, $destKey);
+            return $this->client->copy($fromBucket ?? $this->bucket, $fromKey, $destBucket ?? $this->bucket, $destKey);
         } catch (AwsException $e) {
             return print($e->getMessage() . PHP_EOL);
         }
@@ -119,7 +122,7 @@ class S3Client
         }
     }
 
-    public function presignedUrlGet(string $key, ?string $bucket, string $expiration = '+20 minutes')
+    public function presignedUrlGet(string $key, ?string $bucket = null, string $expiration = '+20 minutes')
     {
         try {
             $cmd = $this->client->getCommand('GetObject', [
@@ -136,7 +139,7 @@ class S3Client
     /**
      * Returns a presigned url to put an object of given type into bucket at given key.
      */
-    public function presignedUrlPut(string $key, ?string $bucket, string $type = 'image/jpeg', string $expiration = '+20 minutes')
+    public function presignedUrlPut(string $key, ?string $bucket = null, string $type = 'image/jpeg', string $expiration = '+20 minutes')
     {
         try {
             $cmd = $this->client->getCommand('PutObject', [

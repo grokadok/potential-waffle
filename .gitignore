@@ -6,3 +6,6 @@ ssl.*
 /*lock*
 .clever.json
 /config
+/server/*
+!/server/server.php
+!/server/composer.json

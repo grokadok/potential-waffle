@@ -14,16 +14,18 @@ services:
             MYSQL_ADDON_PASSWORD: "devonly"
             MYSQL_ADDON_DB: "db"
             ISLOCAL: TRUE
+            COMPOSER_ALLOW_SUPERUSER: 1
+        # command: composer -d ./ install && composer clear-cache && php server.php
         restart: unless-stopped
-        # volumes:
-        #     - ./server:/var/www
-        #     - ./config:/var/www/config
-        #     - ./app:/var/www/app
-        #     - ./vendor/firebase/php-jwt/src:/var/www/app/jwt
-        #     - ./public:/var/www/public
-        #     - ./ressources/js:/var/www/public/assets/js
-        #     - ./ressources/vendor:/var/www/public/assets/vendor
-        #     - ./ressources/fonts:/var/www/public/assets/fonts
+        volumes:
+            - ./server:/var/www
+            - ./config:/var/www/config
+            - ./app:/var/www/app
+            - ./vendor/firebase/php-jwt/src:/var/www/app/jwt
+            # - ./public:/var/www/public
+            # - ./ressources/js:/var/www/public/assets/js
+            # - ./ressources/vendor:/var/www/public/assets/vendor
+            # - ./ressources/fonts:/var/www/public/assets/fonts
         ports:
             - 8080:8080
 

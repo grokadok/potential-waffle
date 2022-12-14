@@ -320,14 +320,11 @@ class FWServer
         // DB query BENCHMARK
         // $this->dbQueryBenchmark(10000);
 
-        // $test = [];
-        // print((isset($test) ? 'set' : 'unset') . PHP_EOL);
-        // print((empty($test) ? 'empty' : 'not empty') . PHP_EOL);
-        // change session management to stateless asap with jwt or use dedicated library.
-
         // s3 test
-        $test = $this->s3->objectExist('foo');
-        var_dump($test);
+        // $test = $this->s3->listObjects('gazet');
+        // print('s3 test result: ');
+        // var_dump($test);
+        // print(PHP_EOL);
 
 
         // Using operation methods creates a command implicitly
