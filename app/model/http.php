@@ -61,9 +61,9 @@ trait Http
                     'id' => $iduser,
                     'lastname' => $userData['last_name'],
                     'firstname' => $userData['first_name'],
-                    'admin' => $this->isAdmin($iduser),
-                    'member' => $this->isMember($iduser),
-                    'recipient' => $this->isRecipient($iduser),
+                    'admin' => $this->userIsAdmin($iduser),
+                    'member' => $this->userIsMember($iduser),
+                    'recipient' => $this->userIsRecipient($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'theme' => $userData['theme'],
                 ];
@@ -174,12 +174,47 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // REQUEST SEND FILE URL TEST (14)
+            // REQUEST PRESIGNED JPEG UPLOAD (14)
             /////////////////////////////////////////////////////
 
             if ($f === 14) {
+                $responseContent = ['f' => 14, 'url' => $this->s3->presignedUrlPut()];
             }
 
+            /////////////////////////////////////////////////////
+            // HANDLE AVATAR UPLOAD CONFIRMATION (15)
+            /////////////////////////////////////////////////////
+
+            if ($f === 15) {
+                // $key = $post['k'];
+                // move object
+                $moved = $this->s3->copy($post['k']);
+                // store object
+                // $this->setUserAvatar();
+                // return true
+                $responseContent = ['f' => 15, 'object' => true];
+            }
+
+            /////////////////////////////////////////////////////
+            // HANDLE PUBLICATION JPEG UPLOAD CONFIRMATION (16)
+            /////////////////////////////////////////////////////
+
+            if ($f === 16) {
+                // move object
+
+                // store object
+            }
+
+            /////////////////////////////////////////////////////
+            // UPDATE RECIPIENT (17)
+            /////////////////////////////////////////////////////
+
+            if ($f === 17) {
+                $responseContent = ['f' => 17, 'updated' => $this->updateRecipient($iduser, $post['i'], $post['r'])];
+            }
+
+
+            var_dump($responseContent);
             return [
                 "type" => $responseType,
                 "content" => $responseContent,

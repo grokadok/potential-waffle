@@ -255,8 +255,6 @@ class FWServer
         Request $request,
         Response $response
     ) {
-        // var_dump($request);
-        // var_dump(json_decode($request->getContent()));
         $response->header("Server", "SeaServer");
         $open_basedir = __DIR__ . "/public";
         $server = $request->server;
