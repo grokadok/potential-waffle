@@ -27,30 +27,46 @@ trait Http
                 // $responseType = 'application/json';
                 // $iduser = $this->getUserIdFromFirebase($post['sub']);
 
-                // if user doesn't exists in db, create it
+                // if user doesn't exists in db
                 if (!$iduser) {
-                    if ($post['name']) {
-                        $name = explode(' ', $post['name']);
-                        if (count($name) > 1) {
-                            $firstname = array_shift($name);
-                            $lastname = implode(' ', $name);
-                        } else {
-                            $lastname = $name[0];
+                    // if gmail address corresponds to existing user, link firebase user to it
+                    if (substr($post['email'], -9) === 'gmail.com') {
+                        $emailFinal = gmailNoPeriods($post['email']);
+                        $iduser = $this->getUserIdFromEmail($emailFinal);
+                    } else $emailFinal = $post['email'];
+                    if ($iduser) {
+                        $this->addUser([
+                            'iduser' => $iduser,
+                            'email' => $post['email'],
+                            'firebase_uid' => $post['sub'],
+                            'firebase_name' => $post['name'] ?? '',
+                        ]);
+                    } else {
+                        // else create user
+                        if ($post['name']) {
+                            $name = explode(' ', $post['name']);
+                            if (count($name) > 1) {
+                                $firstname = array_shift($name);
+                                $lastname = implode(' ', $name);
+                            } else {
+                                $lastname = $name[0];
+                            }
+                            unset($name);
                         }
-                        unset($name);
-                    }
-                    // TODO: handle picture
-                    // download picture
-                    // store it & get uri
-                    // set avatar in db
+                        // else create it
+                        // TODO: handle picture
+                        // download picture
+                        // store it & get uri
+                        // set avatar in db
 
-                    $iduser = $this->addUser([
-                        'email' => $post['email'],
-                        'firstname' => $firstname ?? '',
-                        'lastname' => $lastname ?? '',
-                        'firebase_uid' => $post['sub'],
-                        'firebase_name' => $post['name'] ?? '',
-                    ]);
+                        $iduser = $this->addUser([
+                            'email' => $emailFinal,
+                            'firstname' => $firstname ?? '',
+                            'lastname' => $lastname ?? '',
+                            'firebase_uid' => $post['sub'],
+                            'firebase_name' => $post['name'] ?? '',
+                        ]);
+                    }
                 }
 
                 $userData = $this->getUserData($iduser);

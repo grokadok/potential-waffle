@@ -620,6 +620,16 @@ trait Gazet
         ] : false;
     }
 
+    private function getUserIdFromEmail(String $email)
+    {
+        return $this->db->request([
+            'query' => 'SELECT iduser FROM user WHERE email = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$email],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
     /**
      * Returns user id from Firebase uid or false.
      * @return int|false User id

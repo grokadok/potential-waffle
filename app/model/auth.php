@@ -39,40 +39,42 @@ trait Auth
      */
     private function addUser($options)
     {
-        $into = 'email';
-        $values = '?';
-        $type = 's';
-        $content = [$options['email']];
-        if (!empty($options['firstname'])) {
-            $into .= ',first_name';
-            $values .= ',?';
-            $type .= 's';
-            $content[] = $options['firstname'];
+        if (empty($options['iduser'])) {
+            $into = 'email';
+            $values = '?';
+            $type = 's';
+            $content = [$options['email']];
+            if (!empty($options['firstname'])) {
+                $into .= ',first_name';
+                $values .= ',?';
+                $type .= 's';
+                $content[] = $options['firstname'];
+            }
+            if (!empty($options['lastname'])) {
+                $into .= ',last_name';
+                $values .= ',?';
+                $type .= 's';
+                $content[] = $options['lastname'];
+            }
+            $this->db->request([
+                'query' => "INSERT INTO user ($into) VALUES ($values);",
+                'type' => $type,
+                'content' => $content,
+                'array' => true,
+            ]);
+            $iduser = $this->db->request([
+                'query' => 'SELECT iduser FROM user WHERE email = ? LIMIT 1;',
+                'type' => 's',
+                'content' => [$options['email']],
+                'array' => true,
+            ])[0][0];
         }
-        if (!empty($options['lastname'])) {
-            $into .= ',last_name';
-            $values .= ',?';
-            $type .= 's';
-            $content[] = $options['lastname'];
-        }
-        $this->db->request([
-            'query' => "INSERT INTO user ($into) VALUES ($values);",
-            'type' => $type,
-            'content' => $content,
-            'array' => true,
-        ]);
-        $iduser = $this->db->request([
-            'query' => 'SELECT iduser FROM user WHERE email = ? LIMIT 1;',
-            'type' => 's',
-            'content' => [$options['email']],
-            'array' => true,
-        ])[0][0];
 
         if ($options['firebase_uid'])
             $this->db->request([
                 'query' => 'INSERT INTO firebase_has_user (iduser,uidfirebase,email,name) VALUES (?,?,?,?);',
                 'type' => 'isss',
-                'content' => [$iduser, $options['firebase_uid'], $options['email'], $options['firebase_name']],
+                'content' => [$options['iduser'] ?? $iduser, $options['firebase_uid'], $options['email'], $options['firebase_name']],
             ]);
 
         return $iduser;
@@ -89,16 +91,34 @@ trait Auth
                 $decoded = JWT::decode($jwt, new Key($key, 'RS256'));
                 $currentTime = time();
                 // check expiration time (exp) must be in the future
-                if ($decoded->exp < $currentTime) return false;
+                if ($decoded->exp < $currentTime) {
+                    print('Error: jwt exp in the past.');
+                    return false;
+                }
                 // check issued at time (iat) must be in the past
-                if ($decoded->iat > $currentTime) return false;
+                if ($decoded->iat > $currentTime) {
+                    print('Error: jwt iat in the future.');
+                    return false;
+                }
                 // check auth time (auth) must be in the past
-                if ($decoded->auth_time > $currentTime) return false;
+                if ($decoded->auth_time > $currentTime) {
+                    print('Error: jwt auth in the future.');
+                    return false;
+                }
                 // check app name (aud & iss)
-                if ($decoded->aud !== $appName) return false;
-                if (str_replace('https://securetoken.google.com/', '', $decoded->iss) !== $appName) return false;
+                if ($decoded->aud !== $appName) {
+                    print('Error: jwt aud incorrect.');
+                    return false;
+                }
+                if (str_replace('https://securetoken.google.com/', '', $decoded->iss) !== $appName) {
+                    print('Error: jwt iss incorrect.');
+                    return false;
+                }
                 // check user uid (sub) non empty string
-                if (empty($decoded->sub)) return false;
+                if (empty($decoded->sub)) {
+                    print('Error: jwt sub incorrect.');
+                    return false;
+                }
 
                 return $decoded;
             } catch (\LogicException) {

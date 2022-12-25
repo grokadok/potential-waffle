@@ -69,3 +69,16 @@ function arrayAssocFilterKeys($arrayAssoc, $ref)
     }
     return $newArray;
 }
+
+/**
+ * If is gmail.com email address, returns the cleaned from periods address.
+ */
+function gmailNoPeriods(String $string)
+{
+    if (substr($string, -9) === 'gmail.com') {
+        $email = explode('@', $string);
+        $noDots = str_replace('.', '', $email[0]);
+        $emailFinal = $noDots . '@' . $email[1];
+    }
+    return $emailFinal ?? $string;
+}
