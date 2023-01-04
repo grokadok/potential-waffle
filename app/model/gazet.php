@@ -40,8 +40,8 @@ trait Gazet
         // if family name is available for user
         if ($this->familyExistsForUser($iduser, $name)) return false;
 
-        $randomCode = bin2hex(random_bytes(7));
-        while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = bin2hex(random_bytes(7));
+        $randomCode = bin2hex(random_bytes(5));
+        while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = bin2hex(random_bytes(5));
         // create family
         $this->db->request([
             'query' => 'INSERT INTO family (name,admin,code) VALUES (?,?,?);',
@@ -702,6 +702,11 @@ trait Gazet
     private function familyEmailInvite(int $iduser, int $idfamily, string $email)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        if (!empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_invitation WHERE email = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'si',
+            'content' => [$email, $idfamily],
+        ]))) return false;
         $approved = $this->userIsAdminOfFamily($iduser, $idfamily) ? 1 : 0;
         $this->db->request([
             'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved) VALUES (?,?,?,?);',
