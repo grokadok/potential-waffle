@@ -22,6 +22,16 @@ trait Gazet
         return true;
     }
 
+    private function checkFamilyCodeAvailability(string $code)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family WHERE code = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$code],
+            'array' => true,
+        ])[0][0]);
+    }
+
     /**
      * Creates family if name available, sets it as default for user if default not set and returns family data.
      */
@@ -30,16 +40,18 @@ trait Gazet
         // if family name is available for user
         if ($this->familyExistsForUser($iduser, $name)) return false;
 
+        $randomCode = bin2hex(random_bytes(7));
+        while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = bin2hex(random_bytes(7));
         // create family
         $this->db->request([
-            'query' => 'INSERT INTO family (name,admin) VALUES (?,?);',
-            'type' => 'si',
-            'content' => [$name, $iduser],
+            'query' => 'INSERT INTO family (name,admin,code) VALUES (?,?,?);',
+            'type' => 'sis',
+            'content' => [$name, $iduser, $randomCode],
         ]);
         $idfamily = $this->db->request([
-            'query' => 'SELECT idfamily FROM family WHERE name = ? AND admin = ? LIMIT 1;',
-            'type' => 'si',
-            'content' => [$name, $iduser],
+            'query' => 'SELECT idfamily FROM family WHERE code = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$randomCode],
             'array' => true,
         ])[0][0];
         $this->db->request([
