@@ -171,6 +171,13 @@ trait Gazet
         return ['state' => 0, 'default' => $this->getUserDefaultFamily($iduser)];
     }
 
+    private function emailIsMemberOfFamily(string $email, int $idfamily)
+    {
+        $iduser = $this->getUserByEmail($email);
+        if (empty($iduser)) return false;
+        return $this->userIsMemberOfFamily($iduser, $idfamily);
+    }
+
     private function familyExists(int $idfamily)
     {
         return !empty($this->db->request([
@@ -526,6 +533,16 @@ trait Gazet
         ]);
     }
 
+    private function getUserByEmail(string $email)
+    {
+        return $this->db->request([
+            'query' => 'SELECT iduser FROM user WHERE email = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$email],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
     /**
      * Returns comments' id for given user, false if none.
      * @return array|false
@@ -702,6 +719,8 @@ trait Gazet
     private function familyEmailInvite(int $iduser, int $idfamily, string $email)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $email = gmailNoPeriods($email);
+        if (!empty($this->emailIsMemberOfFamily($email, $idfamily))) return false;
         if (!empty($this->db->request([
             'query' => 'SELECT NULL FROM family_invitation WHERE email = ? AND idfamily = ? LIMIT 1;',
             'type' => 'si',
@@ -711,7 +730,7 @@ trait Gazet
         $this->db->request([
             'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved) VALUES (?,?,?,?);',
             'type' => 'isii',
-            'content' => [$idfamily, gmailNoPeriods($email), $iduser, $approved],
+            'content' => [$idfamily, $email, $iduser, $approved],
         ]);
         return true;
     }
