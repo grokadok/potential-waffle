@@ -229,6 +229,14 @@ trait Http
                 $responseContent = ['f' => 17, 'updated' => $this->updateRecipient($iduser, $post['i'], $post['r'])];
             }
 
+            /////////////////////////////////////////////////////
+            // INVITE MEMBER INTO FAMILY (18)
+            /////////////////////////////////////////////////////
+
+            if ($f === 18) {
+                $responseContent = ['f' => 18, 'invited' => $this->familyEmailInvite($iduser, $post['i'], $post['e'])];
+            }
+
 
             var_dump($responseContent);
             return [

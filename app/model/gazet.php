@@ -673,6 +673,22 @@ trait Gazet
     }
 
     /**
+     * Sets invitation into family for email.
+     * @return bool False if inviter is not from family (should not happen but hey, shit happens)
+     */
+    private function familyEmailInvite(int $iduser, int $idfamily, string $email)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $approved = $this->userIsAdminOfFamily($iduser, $idfamily) ? 1 : 0;
+        $this->db->request([
+            'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved) VALUES (?,?,?,?);',
+            'type' => 'isii',
+            'content' => [$idfamily, gmailNoPeriods($email), $iduser, $approved],
+        ]);
+        return true;
+    }
+
+    /**
      * Returns true if recipient has at least one gazette.
      */
     private function recipientHasGazettes($idrecipient)
