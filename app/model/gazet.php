@@ -24,7 +24,7 @@ trait Gazet
 
     private function checkFamilyCodeAvailability(string $code)
     {
-        return !empty($this->db->request([
+        return empty($this->db->request([
             'query' => 'SELECT NULL FROM family WHERE code = ? LIMIT 1;',
             'type' => 's',
             'content' => [$code],
