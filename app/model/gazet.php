@@ -271,6 +271,16 @@ trait Gazet
         return $publications;
     }
 
+    private function getFamilyCode(int $idfamily)
+    {
+        return $this->db->request([
+            'query' => 'SELECT code FROM family WHERE idfamily = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfamily],
+            'array' => true,
+        ])[0][0];
+    }
+
     private function getFamilyMemberData(int $idfamily, int $idmember)
     {
         if (!$this->userIsMemberOfFamily($idmember, $idfamily)) return false;
@@ -587,12 +597,12 @@ trait Gazet
         ]) as $family) $families[$family[0]]['admin'] = true;
 
         $default = $this->getUserDefaultFamily($iduser);
-        // if ($default) $families[$default]['default'] = true;
 
         $response = [];
         foreach (array_keys($families) as $key) {
-            $families[$key]['name'] = $this->getFamilyName($key);
             $families[$key]['id'] = $key;
+            $families[$key]['code'] = $this->getFamilyCode($key);
+            $families[$key]['name'] = $this->getFamilyName($key);
             $families[$key]['admin'] = $families[$key]['admin'] ?? false;
             $families[$key]['member'] = $families[$key]['member'] ?? false;
             $families[$key]['recipient'] = $families[$key]['recipient'] ?? false;
@@ -622,6 +632,7 @@ trait Gazet
     {
         return $this->familyExists($idfamily) ? [
             'id' => $idfamily,
+            'code' => $this->getFamilyCode($idfamily),
             'name' => $this->getFamilyName($idfamily),
             'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
             'member' => $this->userIsMemberOfFamily($iduser, $idfamily),
