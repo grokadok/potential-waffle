@@ -66,20 +66,23 @@ trait Http
                             'firebase_uid' => $post['sub'],
                             'firebase_name' => $post['name'] ?? '',
                         ]);
+                        $this->updateUserEmailInvitation($iduser, $emailFinal);
                     }
                 }
 
                 $userData = $this->getUserData($iduser);
 
                 $responseContent = [
+                    'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
                     'families' => $this->getUserFamiliesData($iduser),
-                    'id' => $iduser,
-                    'lastname' => $userData['last_name'],
                     'firstname' => $userData['first_name'],
-                    'admin' => $this->userIsAdmin($iduser),
+                    'id' => $iduser,
+                    'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
+                    'lastname' => $userData['last_name'],
                     'recipient' => $this->userIsRecipient($iduser),
+                    'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'theme' => $userData['theme'],
                 ];
@@ -236,6 +239,40 @@ trait Http
             if ($f === 18) {
                 $responseContent = ['f' => 18, 'invited' => $this->familyEmailInvite($iduser, $post['i'], $post['e'])];
             }
+
+            /////////////////////////////////////////////////////
+            // ADMIN APPROVES INVITATION (19)
+            /////////////////////////////////////////////////////
+
+            if ($f === 19) {
+                $responseContent = ['f' => 19, 'approved' => $this->familyInvitationApprove($iduser, $post['u'], $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // USER ACCEPTS INVITATION (20)
+            /////////////////////////////////////////////////////
+
+            if ($f === 20) {
+                $responseContent = ['f' => 20, 'approved' => $this->familyInvitationAccept($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // USER APPLIES TO FAMILY WITH CODE (21)
+            /////////////////////////////////////////////////////
+
+            if ($f === 21) {
+                $responseContent = ['f' => 21, 'applied' => $this->userUseFamilyCode($iduser, $post['c'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // ADMIN APPROVES REQUEST (22)
+            /////////////////////////////////////////////////////
+
+            if ($f === 22) {
+                $responseContent = ['f' => 22, 'approved' => $this->familyRequestApprove($iduser, $post['r'], $post['i'])];
+            }
+
+
 
 
             var_dump($responseContent);

@@ -9,16 +9,13 @@ trait Gazet
      */
     private function addUserToFamily(int $iduser, int $idfamily)
     {
-        //if family name available for user
-        if ($this->familyExistsForUser($iduser, $this->getFamilyName($idfamily))) return false;
-        // insert into family members
-        $this->db->request([
-            'query' => 'INSERT INTO family_has_member (idfamily, iduser) VALUES ($idfamily, $iduser);',
-            'type' => 'ii',
-            'content' => [$idfamily, $iduser],
+        $name = $this->getAvailableFamilyName($iduser, $idfamily, $this->getFamilyName($idfamily)); // sets family display name according to user's family display names availability
+        $this->db->request([ // insert into family members
+            'query' => 'INSERT INTO family_has_member (idfamily, iduser, display_name) VALUES (?,?,?);',
+            'type' => 'iis',
+            'content' => [$idfamily, $iduser, $name],
         ]);
         // TODO: send push to user added
-
         return true;
     }
 
@@ -37,9 +34,6 @@ trait Gazet
      */
     private function createFamily(int $iduser, string $name)
     {
-        // if family name is available for user
-        if ($this->familyExistsForUser($iduser, $name)) return false;
-
         $randomCode = bin2hex(random_bytes(5));
         while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = bin2hex(random_bytes(5));
         // create family
@@ -55,9 +49,9 @@ trait Gazet
             'array' => true,
         ])[0][0];
         $this->db->request([
-            'query' => 'INSERT INTO family_has_member (idfamily, iduser) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$idfamily, $iduser],
+            'query' => 'INSERT INTO family_has_member (idfamily, iduser, display_name) VALUES (?,?,?);',
+            'type' => 'iis',
+            'content' => [$idfamily, $iduser, $this->getAvailableFamilyName($iduser, $idfamily, $name)],
         ]);
 
         // if user's first family, set default family for user
@@ -171,11 +165,38 @@ trait Gazet
         return ['state' => 0, 'default' => $this->getUserDefaultFamily($iduser)];
     }
 
-    private function emailIsMemberOfFamily(string $email, int $idfamily)
+    /**
+     * Sets familyInvitation into family for email.
+     * @return bool False if inviter is not from family (should not happen but hey, shit happens)
+     */
+    private function familyEmailInvite(int $iduser, int $idfamily, string $email)
     {
-        $iduser = $this->getUserByEmail($email);
-        if (empty($iduser)) return false;
-        return $this->userIsMemberOfFamily($iduser, $idfamily);
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false; // check if inviter is member
+        $email = gmailNoPeriods($email); // clean email address
+        $invitee = $this->getUserByEmail($email); // get iduser for email if exists
+        $into = '';
+        $value = '';
+        $type = '';
+        $content = [];
+        if ($invitee) { // check if invitee is already member
+            if ($this->userIsMemberOfFamily($invitee, $idfamily)) return false;
+            $into = ',invitee';
+            $value = ',?';
+            $type = 'i';
+            $content[] = $invitee;
+        }
+        if (!empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_invitation WHERE email = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'si',
+            'content' => [$email, $idfamily],
+        ]))) return false;
+        $approved = $this->userIsAdminOfFamily($iduser, $idfamily) ? 1 : 0;
+        $this->db->request([
+            'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved' . $into . ') VALUES (?,?,?,?' . $value . ');',
+            'type' => 'isii' . $type,
+            'content' => [$idfamily, $email, $iduser, $approved, ...$content],
+        ]);
+        return true;
     }
 
     private function familyExists(int $idfamily)
@@ -190,13 +211,13 @@ trait Gazet
     /**
      * Returns whether or not a family name is already used for a given user.
      */
-    private function familyExistsForUser(int $iduser, string $name)
-    {
-        $families = $this->getUserFamilies($iduser);
-        $used = false;
-        foreach ($families as $family) if ($family['name'] === $name) $used = true;
-        return empty($families) ? false : $used;
-    }
+    // private function familyExistsForUser(int $iduser, string $name)
+    // {
+    //     $families = $this->getUserFamilies($iduser);
+    //     $used = false;
+    //     foreach ($families as $family) if ($family['name'] === $name) $used = true;
+    //     return empty($families) ? false : $used;
+    // }
 
     /**
      * Returns true if family has at least one gazette.
@@ -207,6 +228,15 @@ trait Gazet
         $recipients = implode(',', $this->getFamilyRecipients($idfamily));
         return !empty($this->db->request([
             'query' => "SELECT NULL FROM gazette WHERE idrecipient IN ($recipients) LIMIT 1;",
+        ]));
+    }
+
+    private function familyHasInvitation(int $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_invitation WHERE idfamily = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfamily],
         ]));
     }
 
@@ -228,6 +258,15 @@ trait Gazet
         ]));
     }
 
+    private function familyHasRequest(int $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_request WHERE idfamily = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfamily],
+        ]));
+    }
+
     /**
      * Returns true if family has running subscription.
      */
@@ -238,6 +277,104 @@ trait Gazet
         return !empty($this->db->request([
             'query' => "SELECT NULL FROM subscription WHERE idrecipient IN ($idrecipients) AND end IS NULL LIMIT 1;",
         ]));
+    }
+
+    /**
+     * If familyInvitation approved, finalizes it, else sets it accepted.
+     */
+    private function familyInvitationAccept($iduser, $idfamily)
+    {
+        if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // if already member, false
+        $this->familyInvitationIsApproved($iduser, $idfamily) // if approved
+            ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
+            : $this->db->request([ // else set accepted
+                'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idfamily, $iduser],
+            ]);
+        return true;
+    }
+
+    /**
+     * If familyInvitation accepted, finalizes it, else sets it approved.
+     */
+    private function familyInvitationApprove($iduser, $invitee, $idfamily)
+    {
+        if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
+        $this->familyInvitationIsAccepted($invitee, $idfamily) // if accepted
+            ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
+            : $this->db->request([ // else set approved
+                'query' => 'UPDATE family_invitation SET approved = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idfamily, $invitee],
+            ]);
+        return true;
+    }
+
+    private function familyInvitationExist($iduser, $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_invitation WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]));
+    }
+
+    /**
+     * Adds user to family and removes familyInvitation. Returns false if user already member.
+     */
+    private function familyInvitationFinalize($iduser, $idfamily)
+    {
+        $this->familyInvitationRemove($iduser, $idfamily); // remove familyInvitation
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $this->db->request([
+            'query' => 'INSERT INTO family_has_member (idfamily,iduser) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]);
+        return true;
+    }
+
+    /**
+     * Returns acceptation status of familyInvitation for given user and family, false if no familyInvitation.
+     * @return int|false
+     */
+    private function familyInvitationIsAccepted($iduser, $idfamily)
+    {
+        return $this->db->request([
+            'query' => 'SELECT accepted FROM family_invitation WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns approval status of familyInvitation for given user and family, false if no familyInvitation.
+     * @return int|false
+     */
+    private function familyInvitationIsApproved($iduser, $idfamily)
+    {
+        return $this->db->request([
+            'query' => 'SELECT approved FROM family_invitation WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
+     * Removes familyInvitation for given user and family.
+     */
+    private function familyInvitationRemove($iduser, $idfamily)
+    {
+        $this->db->request([
+            'query' => 'DELETE FROM family_invitation WHERE invitee = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+        ]);
     }
 
     /**
@@ -262,6 +399,31 @@ trait Gazet
     }
 
     /**
+     * Returns whether family display name is available for a given user to use for given family or not.
+     */
+    private function familyNameAvailable(int $iduser, string $name, int $idfamily)
+    {
+        return empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_has_member WHERE iduser = ? AND idfamily != ? AND display_name = ? LIMIT 1;',
+            'type' => 'iis',
+            'content' => [$iduser, $idfamily, $name],
+        ]));
+    }
+
+    private function familyRequestApprove(int $iduser, int $requester, int $idfamily)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if user is admin of family
+        if ($this->userIsMemberOfFamily($requester, $idfamily)) return false; // if requester is not member of family
+        $this->addUserToFamily($iduser, $idfamily); // add requester to family
+        $this->db->request([
+            'query' => 'DELETE FROM family_request WHERE idfamily = ? AND iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]); // remove request
+        return true;
+    }
+
+    /**
      * Returns all publications id for given family, false if none.
      * @return array|false
      */
@@ -278,6 +440,18 @@ trait Gazet
         return $publications;
     }
 
+    /**
+     * Checks if given name is available for given user and family, returns name or modified one if not.
+     */
+    private function getAvailableFamilyName(int $iduser, int $idfamily, string $name)
+    {
+        if ($this->familyNameAvailable($iduser, $name, $idfamily)) return $name;
+        $tempName = "$name";
+        $suffix = 1;
+        while (!$this->familyNameAvailable($iduser, $tempName, $idfamily)) $tempName = $name . '_' . $suffix++;
+        return $tempName;
+    }
+
     private function getFamilyCode(int $idfamily)
     {
         return $this->db->request([
@@ -287,6 +461,43 @@ trait Gazet
             'array' => true,
         ])[0][0];
     }
+
+    /**
+     * Returns given user given family display name.
+     * @return string|false
+     */
+    private function getFamilyDisplayName(int $iduser, int $idfamily)
+    {
+        return $this->db->request([
+            'query' => 'SELECT display_name FROM family_has_member WHERE idfamily = ? AND iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    private function getFamilyInvitations(int $idfamily)
+    {
+        if (!$this->familyHasInvitation($idfamily)) return false;
+        return $this->db->request([
+            'query' => 'SELECT email,invitee,inviter,approved,accepted,created FROM family_invitation WHERE idfamily = ?;',
+            'type' => 'i',
+            'content' => [$idfamily],
+        ]);
+    }
+    private function getFamilyRequests(int $idfamily)
+    {
+        if (!$this->familyHasRequest($idfamily)) return false;
+        $requests = [];
+        foreach ($this->db->request([
+            'query' => 'SELECT iduser FROM family_request WHERE idfamily = ?;',
+            'type' => 'i',
+            'content' => [$idfamily],
+            'array' => true,
+        ]) as $user) $requests[] = ['id' => $user[0], ...$this->getUserName($user[0])];
+        return $requests;
+    }
+
 
     private function getFamilyMemberData(int $idfamily, int $idmember)
     {
@@ -369,6 +580,16 @@ trait Gazet
         ]);
         foreach ($recipients as &$recipient) $recipient = $recipient[0];
         return $recipients;
+    }
+
+    private function getFamilyWithCode(string $code)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idfamily FROM family WHERE code = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$code],
+            'array' => true,
+        ])[0][0] ?? false;
     }
 
     /**
@@ -533,6 +754,10 @@ trait Gazet
         ]);
     }
 
+    /**
+     * Returns iduser if exists, else false.
+     * @return int|false
+     */
     private function getUserByEmail(string $email)
     {
         return $this->db->request([
@@ -593,11 +818,16 @@ trait Gazet
     {
         $families = [];
         foreach ($this->db->request([
-            'query' => 'SELECT idfamily FROM family_has_member WHERE iduser = ?;',
+            'query' => 'SELECT idfamily,display_name FROM family_has_member WHERE iduser = ?;',
             'type' => 'i',
             'content' => [$iduser],
             'array' => true,
-        ]) as $family) $families[$family[0]]['member'] = true;
+        ]) as $family) {
+            $families[$family[0]] = [
+                'member' => true,
+                'name' => $family[1],
+            ];
+        }
 
         foreach ($this->db->request([
             'query' => 'SELECT idfamily FROM recipient WHERE iduser = ?;',
@@ -614,14 +844,21 @@ trait Gazet
         ]) as $family) $families[$family[0]]['admin'] = true;
 
         $default = $this->getUserDefaultFamily($iduser);
+        $invitations = $this->getUserInvitations($iduser);
+        if ($invitations)
+            foreach ($invitations as $invitation) {
+                $families[$invitation['idfamily']]['invitation'] = true;
+                $families[$invitation['idfamily']]['accepted'] = $invitation['accepted'];
+                $families[$invitation['idfamily']]['approved'] = $invitation['approved'];
+            }
 
         $response = [];
         foreach (array_keys($families) as $key) {
             $families[$key]['id'] = $key;
             $families[$key]['code'] = $this->getFamilyCode($key);
-            $families[$key]['name'] = $this->getFamilyName($key);
             $families[$key]['admin'] = $families[$key]['admin'] ?? false;
             $families[$key]['member'] = $families[$key]['member'] ?? false;
+            $families[$key]['name'] = $families[$key]['name'] ?? $this->getFamilyName($key);
             $families[$key]['recipient'] = $families[$key]['recipient'] ?? false;
             $families[$key]['default'] = $key === $default ? true : false;
             $response[] = $families[$key];
@@ -637,27 +874,35 @@ trait Gazet
         $families = $this->getUserFamilies($iduser);
         if (empty($families)) return false;
         foreach ($families as &$family) {
-            // get recipients + active subscription
-            $family['recipients'] = $this->getFamilyRecipientsData($family['id']);
-            // get members
-            $family['members'] = $this->getFamilyMembers($family['id']);
+            $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
+            $family['members'] = $this->getFamilyMembers($family['id']); // get members
+            if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
+                $family['invitations'] = $this->getFamilyInvitations($iduser, $family['id']);
+                $family['requests'] = $this->getFamilyRequests($iduser, $family['id']);
+            }
         }
         return $families;
     }
 
     private function getUserFamilyData(int $iduser, int $idfamily)
     {
-        return $this->familyExists($idfamily) ? [
+        if ($this->familyExists($idfamily)) return false;
+        $family = [
             'id' => $idfamily,
             'code' => $this->getFamilyCode($idfamily),
-            'name' => $this->getFamilyName($idfamily),
+            'name' => $this->getFamilyDisplayName($iduser, $idfamily),
             'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
             'member' => $this->userIsMemberOfFamily($iduser, $idfamily),
             'recipient' => $this->userIsRecipientOfFamily($iduser, $idfamily),
             'default' => $this->familyIsDefaultForUser($iduser, $idfamily),
             'recipients' => $this->getFamilyRecipientsData($idfamily),
             'members' => $this->getFamilyMembers($idfamily),
-        ] : false;
+        ];
+        if ($family['admin']) {
+            $family['invitations'] = $this->getFamilyInvitations($iduser, $idfamily);
+            $family['requests'] = $this->getFamilyRequests($iduser, $idfamily);
+        }
+        return $family;
     }
 
     private function getUserIdFromEmail(String $email)
@@ -685,6 +930,20 @@ trait Gazet
     }
 
     /**
+     * Returns pending familyInvitations for given user, false if none.
+     * @return array|false
+     */
+    private function getUserInvitations($iduser)
+    {
+        $invitations = $this->db->request([
+            'query' => 'SELECT idfamily,approved,accepted FROM family_invitation WHERE invitee = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        return $invitations;
+    }
+
+    /**
      * Returns first and last names of user in associative array.
      */
     private function getUserName(int $iduser)
@@ -694,6 +953,18 @@ trait Gazet
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
+    }
+
+    private function getUserRequests(int $iduser)
+    {
+        $requests = [];
+        foreach ($this->db->request([
+            'query' => 'SELECT idfamily FROM family_request WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ]) as $request) $requests[] = $request[0];
+        return $requests;
     }
 
     /**
@@ -710,29 +981,6 @@ trait Gazet
             'type' => 'i',
             'content' => [$iduser],
         ])];
-    }
-
-    /**
-     * Sets invitation into family for email.
-     * @return bool False if inviter is not from family (should not happen but hey, shit happens)
-     */
-    private function familyEmailInvite(int $iduser, int $idfamily, string $email)
-    {
-        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
-        $email = gmailNoPeriods($email);
-        if (!empty($this->emailIsMemberOfFamily($email, $idfamily))) return false;
-        if (!empty($this->db->request([
-            'query' => 'SELECT NULL FROM family_invitation WHERE email = ? AND idfamily = ? LIMIT 1;',
-            'type' => 'si',
-            'content' => [$email, $idfamily],
-        ]))) return false;
-        $approved = $this->userIsAdminOfFamily($iduser, $idfamily) ? 1 : 0;
-        $this->db->request([
-            'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved) VALUES (?,?,?,?);',
-            'type' => 'isii',
-            'content' => [$idfamily, $email, $iduser, $approved],
-        ]);
-        return true;
     }
 
     /**
@@ -796,38 +1044,6 @@ trait Gazet
         if (empty($targetComments)) return;
         foreach ($targetComments as $comment) $this->removeComment($comment);
         return;
-    }
-
-    private function setOtherFamilyDefault($iduser, $idfamily)
-    {
-        // select next family as member
-        $nextFamily = $this->db->request([
-            'query' => 'SELECT idfamily FROM family_has_member WHERE iduser = ? AND idfamily != ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idfamily],
-            'array' => true,
-        ])[0][0] ?? null;
-        // if null, select next family as admin
-        if (empty($nextFamily)) $nextFamily = $this->db->request([
-            'query' => 'SELECT idfamily FROM family WHERE admin = ? AND idfamily != ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idfamily],
-            'array' => true,
-        ])[0][0] ?? null;
-        // if null, select next family as recipient
-        if (empty($nextFamily)) $nextFamily = $this->db->request([
-            'query' => 'SELECT idfamily FROM recipient WHERE iduser = ? AND idfamily != ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idfamily],
-            'array' => true,
-        ])[0][0] ?? null;
-        // if user has other family, set as default family.
-        if (!empty($nextFamily)) $this->db->request([
-            'query' => 'UPDATE default_family SET idfamily = ? WHERE iduser = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$nextFamily, $iduser],
-        ]);
-        return $nextFamily;
     }
 
     /**
@@ -1112,24 +1328,6 @@ trait Gazet
     }
 
     /**
-     * Returns false if family name unavailble for user, else true for successful request.
-     */
-    private function requestAddToFamily(int $iduser, int $idfamily)
-    {
-        // if family name available to user
-        if ($this->familyExistsForUser($iduser, $this->getFamilyName($idfamily))) return false;
-        // insert into family_request
-        $this->db->request([
-            'query' => 'INSERT INTO family_request (iduser, idfamily) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$iduser, $idfamily],
-        ]);
-        // TODO: send push to family admin
-
-        return true;
-    }
-
-    /**
      * Sets default family, returns previous default family if set.
      */
     private function setDefaultFamily(int $iduser, int $idfamily)
@@ -1146,6 +1344,38 @@ trait Gazet
             'content' => [$idfamily, $iduser],
         ]);
         return $previous;
+    }
+
+    private function setOtherFamilyDefault($iduser, $idfamily)
+    {
+        // select next family as member
+        $nextFamily = $this->db->request([
+            'query' => 'SELECT idfamily FROM family_has_member WHERE iduser = ? AND idfamily != ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ])[0][0] ?? null;
+        // if null, select next family as admin
+        if (empty($nextFamily)) $nextFamily = $this->db->request([
+            'query' => 'SELECT idfamily FROM family WHERE admin = ? AND idfamily != ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ])[0][0] ?? null;
+        // if null, select next family as recipient
+        if (empty($nextFamily)) $nextFamily = $this->db->request([
+            'query' => 'SELECT idfamily FROM recipient WHERE iduser = ? AND idfamily != ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ])[0][0] ?? null;
+        // if user has other family, set as default family.
+        if (!empty($nextFamily)) $this->db->request([
+            'query' => 'UPDATE default_family SET idfamily = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$nextFamily, $iduser],
+        ]);
+        return $nextFamily;
     }
 
     private function setPublicationPicture(int $idpublication, string $key, string $title = '')
@@ -1237,6 +1467,18 @@ trait Gazet
             ],
         ]);
         return $this->getRecipientData($idrecipient);
+    }
+
+    /**
+     * Sets new iduser in email familyInvitations where email corresponds.
+     */
+    private function updateUserEmailInvitation(int $iduser, string $email)
+    {
+        $this->db->request([
+            'query' => 'UPDATE family_invitation SET invitee = ? WHERE email = ?;',
+            'type' => 'is',
+            'content' => [$iduser, $email],
+        ]);
     }
 
     /**
@@ -1334,5 +1576,18 @@ trait Gazet
             'content' => [$idrecipient, $iduser],
             'array' => true,
         ]));
+    }
+
+    private function userUseFamilyCode(int $iduser, string $code)
+    {
+        $idfamily = $this->getFamilyWithCode($code); // get family with code
+        if (!$idfamily) return false; // if no family, false
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // if already member of family, false
+        $this->db->request([
+            'query' => 'INSERT INTO family_request (idfamily,iduser) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+        ]);
+        return true;
     }
 }
