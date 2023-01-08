@@ -11,7 +11,7 @@ trait Http
     use Gazet;
     private function task($post)
     {
-        var_dump($post);
+        // var_dump($post);
         // var_dump($post['f']);
         try {
             $f = intval($post["f"]);
@@ -67,6 +67,8 @@ trait Http
                             'firebase_name' => $post['name'] ?? '',
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
+                        // TEST PROTOCOL FOR NEW USERS //
+                        $this->testerProcess($iduser);
                     }
                 }
 
@@ -141,7 +143,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 7) {
-                $responseContent = ['f' => 7, 'removed' => $this->removeMemberFromFamily($iduser, $post['i'], $post['m'])];
+                $responseContent = ['f' => 7, 'removed' => $this->removeMemberFromFamily($iduser, $post['i'], $post['m'] ?? null)];
             }
 
             /////////////////////////////////////////////////////
@@ -253,7 +255,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 20) {
-                $responseContent = ['f' => 20, 'approved' => $this->familyInvitationAccept($iduser, $post['i'])];
+                $responseContent = ['f' => 20, 'accepted' => $this->familyInvitationAccept($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -272,10 +274,19 @@ trait Http
                 $responseContent = ['f' => 22, 'approved' => $this->familyRequestApprove($iduser, $post['r'], $post['i'])];
             }
 
+            /////////////////////////////////////////////////////
+            // USER REFUSES INVITATION (23)
+            /////////////////////////////////////////////////////
+
+            if ($f === 23) {
+                $responseContent = ['f' => 23, 'refused' => $this->familyInvitationRefuse($iduser, $post['i'])];
+            }
 
 
 
-            var_dump($responseContent);
+
+
+            // var_dump($responseContent);
             return [
                 "type" => $responseType,
                 "content" => $responseContent,
@@ -283,5 +294,56 @@ trait Http
         } catch (\Exception $e) {
             throw $e;
         }
+    }
+    private function initDb()
+    {
+        print('#### Initializing database content... ####' . PHP_EOL);
+
+        // Create 10 users :
+        $i = 1;
+        while ($i < 11) {
+            $this->db->request([
+                'query' => 'INSERT INTO user (email,first_name,last_name) VALUES (?,?,?);',
+                'type' => 'sss',
+                'content' => ['test' . $i . '@buddy.com', 'Test' . $i++, 'Buddy'],
+            ]);
+        }
+
+        $users = $this->db->request([
+            'query' => 'SELECT iduser FROM user WHERE last_name = ?;',
+            'type' => 's',
+            'content' => ['Buddy'],
+            'array' => true,
+        ]);
+        foreach ($users as &$user) $user = $user[0];
+        $skynet = $users[0];
+        $i = 1;
+        while ($i < 5) $this->createFamily($skynet, 'Test ' . $i++); // first user creates 4 families
+        foreach ($this->db->request([ // foreach family
+            'query' => 'SELECT idfamily FROM family;',
+            'array' => true,
+        ]) as $family) {
+            $i = 2;
+            while ($i < 7) $this->addUserToFamily($users[$i++ - 1], $family[0]); // add 5 more users to family
+            $this->familyEmailInvite($skynet, $family[0], 'test' . $i++ . '@buddy.com'); // admin invite the next user
+            $this->familyEmailInvite($users[1], $family[0], 'test' . $i++ . '@buddy.com'); // member invite the next user
+            while ($i < 11) $this->userUseFamilyCode($users[$i++ - 1], $this->getFamilyCode($family[0])); // the 2 last users request to join family
+            while ($i < 13) $this->createRecipient($users[$i - 11], $family[0], [ // create a recipient by the admin and by one member
+                'display_name' => 'Recipient ' . $i - 10,
+                'birth_date' => '2023-01-06',
+                'last_name' => 'Buddy',
+                'first_name' => 'Recipient ' . $i - 10,
+                'phone' => '+336123456' . $i++,
+                'address' => 'Test',
+                'postal' => '12345',
+                'city' => 'Test',
+                'state' => 'Test',
+                'country' => 'Test',
+                'self' => false,
+            ]);
+        }
+        // next add shared subscription
+
+        print('#### Database content initialized ####' . PHP_EOL);
     }
 }

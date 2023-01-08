@@ -81,9 +81,9 @@ class FWServer
         private $table = new Table(1024),
     ) {
         $this->appname = getenv('APP_NAME');
-        $this->table->column("user", Table::TYPE_INT);
-        $this->table->column("session", Table::TYPE_INT);
-        $this->table->create();
+        // $this->table->column("user", Table::TYPE_INT);
+        // $this->table->column("session", Table::TYPE_INT);
+        // $this->table->create();
         $this->serv->set([
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
@@ -102,7 +102,7 @@ class FWServer
         $this->serv->on("Open", [$this, "onOpen"]);
         $this->serv->on("Message", [$this, "onMessage"]);
         $this->serv->on("Close", [$this, "onClose"]);
-        $this->serv->table = $this->table;
+        // $this->serv->table = $this->table;
         $this->serv->start();
     }
     private function getUserInfo(int $user)
@@ -140,34 +140,35 @@ class FWServer
     ) {
         // remove session from db then $fd from $this->table
         $user = $server->getClientInfo($fd);
-        $session = $server->table->get($fd, "session");
-        $iduser = $server->table->get($fd, "user");
-        if ($session) {
-            echo "delete session: " . $session . PHP_EOL;
-            $this->db->request([
-                "query" => "DELETE FROM session WHERE idsession = ?",
-                "type" => "i",
-                "content" => [$session],
-            ]);
-            $this->serv->table->del($fd);
-            // CHAT related
-            // foreach ($this->chatUserLogout($iduser) as $chat) {
-            //     foreach ($chat["users"] as $chatUser) {
-            //         if ($chatUser["inchat"] === 1) {
-            //             $this->serv->push(
-            //                 $chatUser["fd"],
-            //                 json_encode([
-            //                     "f" => 19,
-            //                     "chat" => [
-            //                         "id" => $chat["id"],
-            //                         "participants" => $chat["list"],
-            //                     ],
-            //                 ])
-            //             );
-            //         }
-            //     }
-            // }
-        }
+        // $session = $server->table->get($fd, "session");
+        // $iduser = $server->table->get($fd, "user");
+        // if ($session) {
+        //     echo "delete session: " . $session . PHP_EOL;
+        //     $this->db->request([
+        //         "query" => "DELETE FROM session WHERE idsession = ?",
+        //         "type" => "i",
+        //         "content" => [$session],
+        //     ]);
+        //     $this->serv->table->del($fd);
+
+        //     // CHAT related
+        //     // foreach ($this->chatUserLogout($iduser) as $chat) {
+        //     //     foreach ($chat["users"] as $chatUser) {
+        //     //         if ($chatUser["inchat"] === 1) {
+        //     //             $this->serv->push(
+        //     //                 $chatUser["fd"],
+        //     //                 json_encode([
+        //     //                     "f" => 19,
+        //     //                     "chat" => [
+        //     //                         "id" => $chat["id"],
+        //     //                         "participants" => $chat["list"],
+        //     //                     ],
+        //     //                 ])
+        //     //             );
+        //     //         }
+        //     //     }
+        //     // }
+        // }
 
         $closer = $reactorId < 0 ? "server" : "client";
         echo "{$closer} closed connection {$fd} from {$user["remote_ip"]}:{$user["remote_port"]}" .
@@ -299,6 +300,7 @@ class FWServer
                 // $res = $this->task($request->post);
                 $response->header("Content-Type", $res["type"] ?? "");
                 $response->end(json_encode($res["content"]) ?? "");
+                // $response->end(json_encode($res["content"], JSON_NUMERIC_CHECK) ?? "");
             } elseif ($request_uri === "/" || $request_uri === "/index.php") {
                 $theme = "light";
                 $session = "";
@@ -334,6 +336,7 @@ class FWServer
             //     "query" => "ALTER TABLE session AUTO_INCREMENT=1; ;",
             // ]);
             print('#### Db connected. ####' . PHP_EOL);
+            if ($this->db->request(['query' => 'SELECT COUNT(iduser) FROM user;', 'array' => true])[0][0] === 0) $this->initDb();
             // $test = $this->db->request([
             //     'query' => 'SELECT NULL FROM user WHERE first_name = ? LIMIT 1;',
             //     'type' => 's',
