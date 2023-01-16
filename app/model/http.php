@@ -78,16 +78,18 @@ trait Http
                     'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
                     'families' => $this->getUserFamiliesData($iduser),
-                    'firstname' => $userData['first_name'],
-                    'id' => $iduser,
+                    // 'firstname' => $userData['first_name'],
+                    // 'id' => $iduser,
                     'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
-                    'lastname' => $userData['last_name'],
+                    // 'lastname' => $userData['last_name'],
                     'recipient' => $this->userIsRecipient($iduser),
                     'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
-                    'theme' => $userData['theme'],
+                    // 'theme' => $userData['theme'],
+                    'user' => ['id' => $iduser, ...$userData],
                 ];
+                // var_dump($responseContent);
             }
 
             /////////////////////////////////////////////////////
