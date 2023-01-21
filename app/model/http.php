@@ -284,6 +284,14 @@ trait Http
                 $responseContent = ['f' => 24, 'presigned' => $this->userGetFile($iduser, $post['i'])];
             }
 
+            /////////////////////////////////////////////////////
+            // REMOVE USER AVATAR (25)
+            /////////////////////////////////////////////////////
+
+            if ($f === 25) {
+                $responseContent = ['f' => 25, 'removed' => $this->removeUserAvatar($iduser)];
+            }
+
 
 
             /////////////////////////////////////////////////////
