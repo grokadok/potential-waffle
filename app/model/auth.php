@@ -56,6 +56,20 @@ trait Auth
                 $type .= 's';
                 $content[] = $options['lastname'];
             }
+            if (!empty($options['avatar'])) {
+                // store img to s3
+                $ext = explode('.', $options['avatar']);
+                $ext = end($ext);
+                $key = $this->s3->getRandomKey() . '.' . $ext;
+                $this->s3->put(['Body' => $options['avatar'], 'key' => $key]); // returns id from db ?
+                // store key in s3 table
+                $idobject = $this->setS3Object($key);
+                $into .= ',avatar';
+                $values .= ',?';
+                $type .= 'i';
+                $content[] = $idobject;
+            }
+
             $this->db->request([
                 'query' => "INSERT INTO user ($into) VALUES ($values);",
                 'type' => $type,

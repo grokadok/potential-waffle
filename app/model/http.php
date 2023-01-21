@@ -28,18 +28,20 @@ trait Http
                 // $iduser = $this->getUserIdFromFirebase($post['sub']);
 
                 // if user doesn't exists in db
+                // var_dump($post);
                 if (!$iduser) {
                     // if gmail address corresponds to existing user, link firebase user to it
-                    if (substr($post['email'], -9) === 'gmail.com') {
-                        $emailFinal = gmailNoPeriods($post['email']);
-                        $iduser = $this->getUserIdFromEmail($emailFinal);
-                    } else $emailFinal = $post['email'];
+                    // if (substr($post['email'], -9) === 'gmail.com') {
+                    $emailFinal = gmailNoPeriods($post['email']);
+                    $iduser = $this->getUserIdFromEmail($emailFinal);
+                    // } else $emailFinal = $post['email'];
                     if ($iduser) {
                         $this->addUser([
                             'iduser' => $iduser,
                             'email' => $post['email'],
                             'firebase_uid' => $post['sub'],
                             'firebase_name' => $post['name'] ?? '',
+                            'avatar' => $post['picture'] ?? '',
                         ]);
                     } else {
                         // else create user
@@ -67,7 +69,7 @@ trait Http
                             'firebase_name' => $post['name'] ?? '',
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
-                        // TEST PROTOCOL FOR NEW USERS //
+                        // DEV: TEST PROTOCOL FOR NEW USERS //
                         $this->testerProcess($iduser);
                     }
                 }
@@ -78,15 +80,11 @@ trait Http
                     'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
                     'families' => $this->getUserFamiliesData($iduser),
-                    // 'firstname' => $userData['first_name'],
-                    // 'id' => $iduser,
                     'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
-                    // 'lastname' => $userData['last_name'],
                     'recipient' => $this->userIsRecipient($iduser),
                     'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
-                    // 'theme' => $userData['theme'],
                     'user' => ['id' => $iduser, ...$userData],
                 ];
                 // var_dump($responseContent);
@@ -197,11 +195,11 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // REQUEST PRESIGNED JPEG UPLOAD (14)
+            // REQUEST PRESIGNED IMAGE PUT LINK (14)
             /////////////////////////////////////////////////////
 
             if ($f === 14) {
-                $responseContent = ['f' => 14, 'url' => $this->s3->presignedUrlPut()];
+                $responseContent = ['f' => 14, 'presigned' => $this->s3->presignedUriPut($post['o'])];
             }
 
             /////////////////////////////////////////////////////
@@ -209,13 +207,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 15) {
-                // $key = $post['k'];
-                // move object
-                $moved = $this->s3->copy($post['k']);
-                // store object
-                // $this->setUserAvatar();
-                // return true
-                $responseContent = ['f' => 15, 'object' => true];
+                $responseContent = ['f' => 15, 'uploaded' => $this->updateUserAvatar($iduser, $post['k'])];
             }
 
             /////////////////////////////////////////////////////
@@ -284,7 +276,23 @@ trait Http
                 $responseContent = ['f' => 23, 'refused' => $this->familyInvitationRefuse($iduser, $post['i'])];
             }
 
+            /////////////////////////////////////////////////////
+            // REQUEST PRESIGNED GET LINK (24)
+            /////////////////////////////////////////////////////
 
+            if ($f === 24) {
+                $responseContent = ['f' => 24, 'presigned' => $this->userGetFile($iduser, $post['i'])];
+            }
+
+
+
+            /////////////////////////////////////////////////////
+            // EMPTY S3 (999)
+            /////////////////////////////////////////////////////
+
+            if ($f === 999) {
+                $responseContent = ['f' => 999, 'emptied' => $this->s3->emptyBucket()];
+            }
 
 
 

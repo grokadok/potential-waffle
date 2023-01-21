@@ -561,7 +561,7 @@ trait Gazet
             foreach ($idmembers as &$member) $member = $member[0];
             $idmembers = implode(',', $idmembers);
             foreach ($this->db->request([
-                'query' => "SELECT iduser as id,first_name,last_name FROM user WHERE iduser IN ($idmembers);",
+                'query' => "SELECT iduser as id,first_name,last_name,avatar FROM user WHERE iduser IN ($idmembers);",
             ]) as $member) $members[$member['id']] = $member;
         }
         return $members;
@@ -652,6 +652,20 @@ trait Gazet
     }
 
     /**
+     * Returns gazette's object id.
+     * @return int|bool
+     */
+    private function getGazetteObjectId(int $idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idobject FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
      * Returns recipient address data
      * @return array Address data
      */
@@ -677,6 +691,19 @@ trait Gazet
             'content' => [$idrecipient],
             'array' => true,
         ])[0][0];
+    }
+
+    /**
+     * Returns recipient's avatar's idobject
+     */
+    private function getRecipientAvatar(int $idrecipient)
+    {
+        return $this->db->request([
+            'query' => 'SELECT avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0] ?? false;
     }
 
     private function getRecipientData(int $idrecipient)
@@ -763,6 +790,55 @@ trait Gazet
     }
 
     /**
+     * Returns array of given family recipients' ids from which user is referent.
+     * @return int[]|false
+     */
+    private function getReferentRecipients(int $iduser, int $idfamily)
+    {
+        $recipients = $this->db->request([
+            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? AND idfamily = ?;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ]);
+        if (empty($recipients)) return false;
+        foreach ($recipients as &$recipient) $recipient = $recipient[0];
+        return $recipients;
+    }
+
+    private function getS3ObjectData(int $idobject)
+    {
+        return $this->db->request([
+            'query' => 'SELECT owner,family FROM s3 WHERE idobject = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+        ])[0] ?? false;
+    }
+
+    private function getS3ObjectIdFromKey(string $key)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idobject FROM s3 WHERE name = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$key],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns key from object, false if object not set.
+     */
+    private function getS3ObjectKeyFromId(int $idobject)
+    {
+        return $this->db->request([
+            'query' => 'SELECT name FROM s3 WHERE idobject = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
      * Returns array of user's id of members participating in given subscription.
      * @return int[]|false
      */
@@ -830,6 +906,20 @@ trait Gazet
     }
 
     /**
+     * Returns idobject of user's avatar
+     * @return int|false Avatar's idobject or false
+     */
+    private function getUserAvatar(int $iduser)
+    {
+        return $this->db->request([
+            'query' => 'SELECT avatar FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
      * Returns iduser if exists, else false.
      * @return int|false
      */
@@ -866,7 +956,7 @@ trait Gazet
     private function getUserData(int $iduser)
     {
         return $this->db->request([
-            'query' => 'SELECT last_name,first_name,theme,email,phone FROM user WHERE iduser = ? LIMIT 1;',
+            'query' => 'SELECT last_name,first_name,theme,email,phone,avatar FROM user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
@@ -1129,21 +1219,21 @@ trait Gazet
         return true;
     }
 
-    private function removeAvatar(string $key)
-    {
-        if (!empty($this->db->request([
-            'query' => 'SELECT NULL FROM user WHERE avatar = ? LIMIT 1;',
-            'type' => 's',
-            'content' => [$key],
-        ]))) return false;
-        if (!empty($this->db->request([
-            'query' => 'SELECT NULL FROM recipient WHERE avatar = ? LIMIT 1;',
-            'type' => 's',
-            'content' => [$key],
-        ]))) return false;
-        $this->s3->deleteObject($key);
-        return true;
-    }
+    // private function removeAvatar(string $key)
+    // {
+    //     if (!empty($this->db->request([
+    //         'query' => 'SELECT NULL FROM user WHERE avatar = ? LIMIT 1;',
+    //         'type' => 's',
+    //         'content' => [$key],
+    //     ]))) return false;
+    //     if (!empty($this->db->request([
+    //         'query' => 'SELECT NULL FROM recipient WHERE avatar = ? LIMIT 1;',
+    //         'type' => 's',
+    //         'content' => [$key],
+    //     ]))) return false;
+    //     $this->s3->deleteObject($key);
+    //     return true;
+    // }
 
     /**
      * Removes a given comment.
@@ -1219,7 +1309,13 @@ trait Gazet
 
     private function removeGazette(int $idgazette)
     {
-        // TODO: complete function depending on storage
+        $this->removeS3Object($this->getGazetteObjectId($idgazette));
+        $this->db->request([
+            'query' => 'DELETE FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+        return true;
     }
 
     /**
@@ -1408,30 +1504,37 @@ trait Gazet
 
     private function removeRecipientAvatar($idrecipient)
     {
-        $avatar = $this->db->request([
-            'query' => 'SELECT avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
+        $idobject = $this->getRecipientAvatar($idrecipient);
+        if (!$idobject) return true;
+        $this->removeS3Object($idobject);
+        $this->db->request([
+            'query' => 'UPDATE recipient SET avatar = NULL WHERE idrecipient = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idrecipient],
-            'array' => true,
-        ])[0][0];
-        if (empty($avatar)) return false;
-        $this->s3->deleteObject($avatar);
+        ]);
         return true;
     }
 
     private function removeRecipientGazettes($idrecipient)
     {
         foreach ($this->db->request([
-            'query' => 'SELECT object_key FROM gazette WHERE idrecipient = ?;',
+            'query' => 'SELECT idgazette FROM gazette WHERE idrecipient = ?;',
             'type' => 'i',
             'content' => [$idrecipient],
             'array' => true,
-        ]) as $gazette) $this->s3->deleteObject($gazette[0]); // TODO: replace with multi object single request
-        $this->db->request([
-            'query' => 'DELETE FROM gazette WHERE idrecipient = ?;',
-            'type' => 'i',
-            'content' => [$idrecipient],
-        ]);
+        ]) as $gazette) $this->removeGazette($gazette[0]);
+
+        // TODO: replace with multi object single request
+
+        // create objects array [['key'=>string $key]]
+        // s3->deleteObjects($objects)
+
+        // then remove gazettes from db
+        // $this->db->request([
+        //     'query' => 'DELETE FROM gazette WHERE idrecipient = ?;',
+        //     'type' => 'i',
+        //     'content' => [$idrecipient],
+        // ]);
         return true;
     }
 
@@ -1459,6 +1562,31 @@ trait Gazet
     }
 
     /**
+     * Removes object from s3 and db.
+     * @return bool
+     */
+    private function removeS3Object(int $idobject)
+    {
+        $this->removeS3ObjectFromKey($this->getS3ObjectKeyFromId($idobject));
+        $this->db->request([
+            'query' => 'DELETE FROM s3 WHERE idobject = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+        ]);
+        return true;
+    }
+
+    /**
+     * Removes object from s3, leaves object in db.
+     * @return bool
+     */
+    private function removeS3ObjectFromKey(string $key)
+    {
+        $this->s3->deleteObject($key);
+        return true;
+    }
+
+    /**
      * Removes a given text component.
      */
     private function removeText(int $idtext)
@@ -1468,6 +1596,19 @@ trait Gazet
             'type' => 'i',
             'content' => [$idtext],
         ]);
+    }
+
+    private function removeUserAvatar($iduser)
+    {
+        $idobject = $this->getUserAvatar($iduser);
+        if (!$idobject) return false;
+        $this->removeS3Object($idobject);
+        $this->db->request([
+            'query' => 'UPDATE user SET avatar = NULL WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        return true;
     }
 
     private function removeUserFamilySubscriptions(int $iduser, int $idfamily)
@@ -1568,21 +1709,19 @@ trait Gazet
         return true;
     }
 
-    private function setRecipientAvatar(int $idrecipient, string $key)
+    private function setRecipientAvatar(int $iduser, int $idrecipient, string $key)
     {
-        $oldAvatar = $this->db->request([
-            'query' => 'SELECT avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idrecipient],
-            'array' => true,
-        ])[0][0];
-        if (!empty($oldAvatar) && $oldAvatar !== $key) $this->s3->deleteObject($oldAvatar);
+        // TODO: check if user has right to do it
+        $newKey = $this->s3->move($key);
+        $idobject = $this->getRecipientAvatar($idrecipient);
+        if ($idobject) return $this->updateS3Object($idobject, $newKey);
+        $idobject = $this->setS3Object($iduser, $newKey);
         $this->db->request([
             'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$key, $idrecipient],
+            'type' => 'ii',
+            'content' => [$idobject, $idrecipient],
         ]);
-        return true;
+        return $idobject;
     }
 
     private function setRecipientReferent(int $iduser, int $idrecipient, int $idreferent)
@@ -1596,21 +1735,50 @@ trait Gazet
         return true;
     }
 
-    private function setUserAvatar(int $iduser, string $key)
+    /**
+     * Set object in db and returns its ID.
+     * @return int Object's ID.
+     */
+    private function setS3Object(int $iduser, string $key)
     {
-        $oldAvatar = $this->db->request([
-            'query' => 'SELECT avatar FROM user WHERE iduser = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$iduser],
-            'array' => true,
-        ])[0][0];
-        if (!empty($oldAvatar) && $oldAvatar !== $key) $this->s3->deleteObject($oldAvatar);
+        $idobject = $this->getS3ObjectIdFromKey($key);
+        if ($idobject) return $idobject;
         $this->db->request([
-            'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
+            'query' => 'INSERT INTO s3 (name,owner) VALUES (?,?);',
             'type' => 'si',
             'content' => [$key, $iduser],
         ]);
-        return true;
+        return $idobject = $this->getS3ObjectIdFromKey($key);
+    }
+
+    // private function setUserAvatar(int $iduser, string $key){
+    //     $idobject=$this->setS3Object($key);
+
+    // }
+
+    private function updateS3Object(int $idobject, string $key)
+    {
+        $this->removeS3ObjectFromKey($this->getS3ObjectKeyFromId($idobject));
+        $this->db->request([
+            'query' => 'UPDATE s3 SET name = ? WHERE idobject = ? LIMIT 1;',
+            'type' => 'si',
+            'content' => [$key, $idobject],
+        ]);
+        return $idobject;
+    }
+
+    private function updateUserAvatar(int $iduser, string $key)
+    {
+        $newKey = $this->s3->move($key);
+        $idobject = $this->getUserAvatar($iduser);
+        if ($idobject) return $this->updateS3Object($idobject, $newKey);
+        $idobject = $this->setS3Object($iduser, $newKey);
+        $this->db->request([
+            'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idobject, $iduser],
+        ]);
+        return $idobject;
     }
 
     private function testerProcess(int $iduser)
@@ -1736,6 +1904,23 @@ trait Gazet
         ]);
     }
 
+    private function userCanReadObject(int $iduser, int $idobject)
+    {
+        $object = $this->getS3ObjectData($idobject);
+        if (!$object) return false;
+        // if user is from set family
+        if (!empty($object['family'])) return $this->userIsMemberOfFamily($iduser, $object['family']) ? true : false;
+        // if user is owner
+        // if user and owner share a family
+        return $iduser === $object['owner'] || $this->usersHaveCommonFamily($iduser, $object['owner']);
+    }
+
+    private function userGetFile(int $iduser, int $idobject)
+    {
+        if (!$this->userCanReadObject($iduser, $idobject)) return false;
+        return ($this->s3->presignedUriGet($this->getS3ObjectKeyFromId($idobject)));
+    }
+
     /**
      * Returns whether or not a user has a default family set.
      */
@@ -1835,23 +2020,6 @@ trait Gazet
         ]));
     }
 
-    /**
-     * Returns array of given family recipients' ids from which user is referent.
-     * @return int[]|false
-     */
-    private function getReferentRecipients(int $iduser, int $idfamily)
-    {
-        $recipients = $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? AND idfamily = ?;',
-            'type' => 'ii',
-            'content' => [$iduser, $idfamily],
-            'array' => true,
-        ]);
-        if (empty($recipients)) return false;
-        foreach ($recipients as &$recipient) $recipient = $recipient[0];
-        return $recipients;
-    }
-
     private function userUseFamilyCode(int $iduser, string $code)
     {
         $idfamily = $this->getFamilyWithCode($code); // get family with code
@@ -1863,5 +2031,14 @@ trait Gazet
             'content' => [$idfamily, $iduser],
         ]);
         return true;
+    }
+
+    private function usersHaveCommonFamily(int $user1, int $user2)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_has_member WHERE iduser IN (?,?) GROUP BY idfamily HAVING COUNT(*) = 2 LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$user1, $user2],
+        ]));
     }
 }

@@ -12,7 +12,7 @@ use Exception;
 class S3Client
 {
     private $client;
-    private $bucket;
+    private string $bucket;
 
     public function __construct()
     {
@@ -95,6 +95,38 @@ class S3Client
         }
     }
 
+    public function deleteObjects(array $objects, string $bucket = null)
+    {
+        return $this->client->deleteObjects([
+            'Bucket' => $bucket ?? $this->bucket,
+            // 'Key' => $file_name,
+            'Delete' => [
+                'Objects' => $objects,
+            ],
+        ]);
+    }
+
+    public function emptyBucket(string $bucket = null)
+    {
+        try {
+            $objects = [];
+            foreach ($this->listObjects()['Contents'] as $content) {
+                $objects[] = [
+                    'Key' => $content['Key'],
+                ];
+            }
+            $this->deleteObjects($objects);
+            $check = $this->listObjects();
+            if (count($check) <= 0) {
+                throw new Exception("Bucket wasn't empty.");
+            }
+            echo 'Deleted all objects and folders from ' . $bucket ?? $this->bucket . PHP_EOL;
+        } catch (Exception $exception) {
+            echo 'Failed to empty bucket ' . $bucket ?? $this->bucket . ' with error: ' . $exception->getMessage();
+            exit("Please fix error with object deletion before continuing.");
+        }
+    }
+
     public function get(string $key, string $bucket = null)
     {
         try {
@@ -109,9 +141,9 @@ class S3Client
 
     public function getRandomKey(string $bucket = null)
     {
-        $newKey = bin2hex(random_bytes(64));
+        $newKey = bin2hex(random_bytes(24));
         while ($this->objectExist($newKey, $bucket ?? $this->bucket))
-            $newKey = bin2hex(random_bytes(64));
+            $newKey = bin2hex(random_bytes(24));
         return $newKey;
     }
 
@@ -120,11 +152,30 @@ class S3Client
         return $this->client->listBuckets();
     }
 
-    public function listObjects(string $bucket)
+    public function listObjects(string $bucket = null)
     {
         return $this->client->listObjects([
-            'Bucket' => $bucket,
+            'Bucket' => $bucket ?? $this->bucket,
         ]);
+    }
+
+    public function move(string $fromKey, string $destKey = null, string $fromBucket = null, string $destBucket = null)
+    {
+        try {
+            $extension = explode('.', $fromKey);
+            $extension = end($extension);
+            $newKey = $destKey ?? $this->getRandomKey($destBucket ?? $this->bucket) . '.' . $extension;
+            $this->client->copy(
+                $fromBucket ?? $this->bucket,
+                $fromKey,
+                $destBucket ?? $this->bucket,
+                $newKey
+            );
+            $this->deleteObject($fromKey);
+            return $newKey;
+        } catch (AwsException $e) {
+            return print($e->getMessage() . PHP_EOL);
+        }
     }
 
     public function objectExist(string $key, string $bucket = null, bool $includeDeleteMarkers = false)
@@ -136,7 +187,11 @@ class S3Client
         }
     }
 
-    public function presignedUrlGet(string $key, ?string $bucket = null, string $expiration = '+5 minutes')
+    public function presignedPostForm()
+    {
+    }
+
+    public function presignedUriGet(string $key, ?string $bucket = null, string $expiration = '+5 minutes')
     {
         try {
             $cmd = $this->client->getCommand('GetObject', [
@@ -153,32 +208,30 @@ class S3Client
     /**
      * Returns a presigned url to put an object of given type into bucket at given key.
      */
-    public function presignedUrlPut(string $type = 'image/jpeg', string $key = null, string $bucket = null, string $expiration = '+5 minutes')
+    public function presignedUriPut(array $options)
     {
         try {
+            $key = $options['key'] ?? ($this->getRandomKey($options['bucket'] ?? $this->bucket) . $options['ext'] ?? '');
             $cmd = $this->client->getCommand('PutObject', [
-                'Bucket' => $bucket ?? $this->bucket,
-                'Key' => $key ?? $this->getRandomKey($bucket ?? $this->bucket),
-                'ContentType' => $type,
+                'Bucket' => $options['bucket'] ?? $this->bucket,
+                'Key' => $key,
+                'ContentType' => $options['type'] ?? 'image/jpeg',
             ]);
-            $request = $this->client->createPresignedRequest($cmd, $expiration)->withMethod('PUT');
-            return (string)$request->getUri();
+            $request = $this->client->createPresignedRequest($cmd, $options['expiration'] ?? '+5 minutes')->withMethod('PUT');
+            return ['bucket' => $options['bucket'] ?? $this->bucket, 'key' => $key, 'uri' => $request->getUri()];
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }
     }
 
-    public function presignedPostForm()
-    {
-    }
-
-    public function put(string $path, string $key = null, string $bucket = null)
+    public function put(array $options)
     {
         try {
             return $this->client->putObject([
-                'Bucket' => $bucket ?? $this->bucket,
-                'Key' => $key ?? $this->getRandomKey($bucket ?? $this->bucket),
-                'SourceFile' => $path,
+                'Bucket' => $options['bucket'] ?? $this->bucket,
+                'Body' => $options['body'] ?? null,
+                'Key' => $options['key'] ?? $this->getRandomKey($options['bucket'] ?? $this->bucket),
+                'SourceFile' => $options['path'] ?? null,
             ]);
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);

@@ -297,6 +297,7 @@ class FWServer
                 $res = $this->task(
                     [...json_decode($request->getContent(), true), ...(array)$jwt,]
                 );
+                var_dump($res);
                 // $res = $this->task($request->post);
                 $response->header("Content-Type", $res["type"] ?? "");
                 $response->end(json_encode($res["content"]) ?? "");
