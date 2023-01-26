@@ -56,19 +56,6 @@ trait Auth
                 $type .= 's';
                 $content[] = $options['lastname'];
             }
-            if (!empty($options['avatar'])) {
-                // store img to s3
-                $ext = explode('.', $options['avatar']);
-                $ext = end($ext);
-                $key = $this->s3->getRandomKey() . '.' . $ext;
-                $this->s3->put(['Body' => $options['avatar'], 'key' => $key]); // returns id from db ?
-                // store key in s3 table
-                $idobject = $this->setS3Object($key);
-                $into .= ',avatar';
-                $values .= ',?';
-                $type .= 'i';
-                $content[] = $idobject;
-            }
 
             $this->db->request([
                 'query' => "INSERT INTO user ($into) VALUES ($values);",
@@ -82,6 +69,21 @@ trait Auth
                 'content' => [$options['email']],
                 'array' => true,
             ])[0][0];
+
+            if (!empty($options['avatar'])) {
+                print('@@@ AVATAR:' . PHP_EOL);
+                var_dump($options['avatar']);
+                print('@@@ END AVATAR' . PHP_EOL);
+                $file = file_get_contents($options['avatar']);
+                // store img to s3
+                $ext = explode('.', $options['avatar']);
+                $ext = end($ext);
+                $key = $this->s3->getRandomKey() . '.' . $ext ?? 'jpg';
+                $this->s3->put(['body' => $file, 'key' => $key]); // returns id from db ?
+                // store key in s3 table
+                // $idobject = $this->setS3Object($iduser,$key);
+                $this->updateUserAvatar($iduser, $key);
+            }
         }
 
         if ($options['firebase_uid'])
@@ -91,7 +93,7 @@ trait Auth
                 'content' => [$options['iduser'] ?? $iduser, $options['firebase_uid'], $options['email'], $options['firebase_name']],
             ]);
 
-        return $iduser;
+        return $options['iduser'] ?? $iduser;
     }
 
     // decode JWT

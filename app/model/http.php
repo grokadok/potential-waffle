@@ -31,10 +31,8 @@ trait Http
                 // var_dump($post);
                 if (!$iduser) {
                     // if gmail address corresponds to existing user, link firebase user to it
-                    // if (substr($post['email'], -9) === 'gmail.com') {
                     $emailFinal = gmailNoPeriods($post['email']);
                     $iduser = $this->getUserIdFromEmail($emailFinal);
-                    // } else $emailFinal = $post['email'];
                     if ($iduser) {
                         $this->addUser([
                             'iduser' => $iduser,
@@ -55,18 +53,13 @@ trait Http
                             }
                             unset($name);
                         }
-                        // else create it
-                        // TODO: handle picture
-                        // download picture
-                        // store it & get uri
-                        // set avatar in db
-
                         $iduser = $this->addUser([
                             'email' => $emailFinal,
                             'firstname' => $firstname ?? '',
                             'lastname' => $lastname ?? '',
                             'firebase_uid' => $post['sub'],
                             'firebase_name' => $post['name'] ?? '',
+                            'avatar' => $post['picture'] ?? '',
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
                         // DEV: TEST PROTOCOL FOR NEW USERS //

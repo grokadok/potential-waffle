@@ -232,9 +232,27 @@ class S3Client
                 'Body' => $options['body'] ?? null,
                 'Key' => $options['key'] ?? $this->getRandomKey($options['bucket'] ?? $this->bucket),
                 'SourceFile' => $options['path'] ?? null,
+                // 'ContentLength' => $options['length'] ?? null,
             ]);
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }
     }
+
+    // public function putFromUrl(array $options)
+    // {
+    //     try {
+    //         $file = file_get_contents($options['body']);
+
+    //         return $this->client->putObject([
+    //             'Bucket' => $options['bucket'] ?? $this->bucket,
+    //             'Body' => $file,
+    //             'Key' => $options['key'] ?? $this->getRandomKey($options['bucket'] ?? $this->bucket),
+    //             // 'SourceFile' => $options['path'] ?? null,
+    //             // 'ContentLength' => $content_length,
+    //         ]);
+    //     } catch (S3Exception $e) {
+    //         print($e->getMessage() . PHP_EOL);
+    //     }
+    // }
 }
