@@ -71,9 +71,9 @@ trait Auth
             ])[0][0];
 
             if (!empty($options['avatar'])) {
-                print('@@@ AVATAR:' . PHP_EOL);
-                var_dump($options['avatar']);
-                print('@@@ END AVATAR' . PHP_EOL);
+                // print('@@@ AVATAR:' . PHP_EOL);
+                // var_dump($options['avatar']);
+                // print('@@@ END AVATAR' . PHP_EOL);
                 $file = file_get_contents($options['avatar']);
                 // store img to s3
                 $ext = explode('.', $options['avatar']);

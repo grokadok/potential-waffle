@@ -154,9 +154,13 @@ class S3Client
 
     public function listObjects(string $bucket = null)
     {
-        return $this->client->listObjects([
-            'Bucket' => $bucket ?? $this->bucket,
-        ]);
+        try {
+            return $this->client->listObjects([
+                'Bucket' => $bucket ?? $this->bucket,
+            ]);
+        } catch (AwsException $e) {
+            print($e);
+        }
     }
 
     public function move(string $fromKey, string $destKey = null, string $fromBucket = null, string $destBucket = null)

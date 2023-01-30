@@ -2,6 +2,8 @@
 
 namespace bopdev;
 
+use PDO;
+
 trait Gazet
 {
     /**
@@ -36,6 +38,43 @@ trait Gazet
             'type' => 'is',
             'content' => [$idfamily, $name],
         ]));
+    }
+
+    private function cleanS3Bucket()
+    {
+        $s3Keys = $this->s3->listObjects()['Contents'];
+        foreach ($s3Keys as &$key) $key = $key['Key'];
+        $dbKeys = $this->db->request([
+            'query' => 'SELECT name FROM s3;',
+            'array' => true,
+        ]);
+        foreach ($dbKeys as &$key) $key = $key[0];
+
+
+        $s3Diff = array_diff($s3Keys, $dbKeys);
+        if (!empty($s3Diff)) {
+            $s3Only = [];
+            foreach ($s3Diff as $key) {
+                $s3Only[] = [
+                    'Key' => $key,
+                ];
+            }
+            $this->s3->deleteObjects($s3Only);
+            print('#### Removed ' . count($s3Only) . ' orphan objects from s3.' . PHP_EOL);
+            unset($s3Only);
+        }
+
+        $dbOnly = array_diff($dbKeys, $s3Keys);
+        if (!empty($dbOnly)) {
+            $dbOnlyStr = implode(',', $dbOnly);
+            $this->db->request([
+                'query' => 'DELETE FROM s3 WHERE idobject IN ' . $dbOnlyStr . ';',
+            ]);
+            print('#### Removed ' . count($dbOnly) . ' orphan objects from db.' . PHP_EOL);
+            unset($dbOnlyStr);
+        }
+        unset($s3Diff, $dbOnly);
+        return true;
     }
 
     /**
@@ -85,15 +124,14 @@ trait Gazet
 
         // create address
         $this->db->request([
-            'query' => 'INSERT INTO address (last_name,first_name,phone,field1,field2,field3,postal,city,state,country) VALUES (?,?,?,?,?,?,?,?,?,?);',
-            'type' => 'ssssssssss',
+            'query' => 'INSERT INTO address (name,phone,field1,field2,field3,postal,city,state,country) VALUES (?,?,?,?,?,?,?,?,?);',
+            'type' => 'sssssssss',
             'content' => [
-                $recipient['last_name'],
-                $recipient['first_name'],
+                $recipient['name'],
                 $recipient['phone'],
-                $recipient['address'],
-                '',
-                '',
+                $recipient['field1'],
+                $recipient['field2'] ?? '',
+                $recipient['field3'] ?? '',
                 $recipient['postal'],
                 $recipient['city'],
                 $recipient['state'],
@@ -101,13 +139,14 @@ trait Gazet
             ],
         ]);
         $idaddress = $this->db->request([
-            'query' => 'SELECT idaddress FROM address WHERE last_name = ? AND first_name = ? AND phone = ? AND field1 = ? AND postal = ? AND city = ? AND state = ? AND country = ? LIMIT 1;',
-            'type' => 'ssssssss',
+            'query' => 'SELECT idaddress FROM address WHERE name = ? AND phone = ? AND field1 = ? AND field2 = ? AND field3 = ? AND postal = ? AND city = ? AND state = ? AND country = ? LIMIT 1;',
+            'type' => 'sssssssss',
             'content' => [
-                $recipient['last_name'],
-                $recipient['first_name'],
+                $recipient['name'],
                 $recipient['phone'],
-                $recipient['address'],
+                $recipient['field1'],
+                $recipient['field2'] ?? '',
+                $recipient['field3'] ?? '',
                 $recipient['postal'],
                 $recipient['city'],
                 $recipient['state'],
@@ -129,9 +168,9 @@ trait Gazet
 
         // create recipient
         $this->db->request([
-            'query' => 'INSERT INTO recipient (idfamily,display_name,birth_date,idaddress,referent' . $into . ') VALUES (?,?,?,?,?' . $values . ');',
+            'query' => 'INSERT INTO recipient (idfamily,display_name,birthdate,idaddress,referent' . $into . ') VALUES (?,?,?,?,?' . $values . ');',
             'type' => 'issii' . $type,
-            'content' => [$idfamily, $displayName, $recipient['birth_date'], $idaddress, $iduser, ...$content],
+            'content' => [$idfamily, $displayName, $recipient['birthdate'], $idaddress, $iduser, ...$content],
         ]);
         $idrecipient = $this->db->request([
             'query' => 'SELECT idrecipient FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
@@ -533,37 +572,31 @@ trait Gazet
     private function getFamilyMemberData(int $idfamily, int $idmember)
     {
         if (!$this->userIsMemberOfFamily($idmember, $idfamily)) return false;
-        // get member data 
         $memberData = $this->getUserData($idmember);
-        // if recipient
-        if (!$this->userIsRecipientOfFamily($idmember, $idfamily)) return $memberData;
-        // get recipient data as well
-        $idrecipient = $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idmember],
-            'array' => true,
-        ])[0][0];
-        $memberData['recipient'] = $this->getRecipientData($idrecipient);
+        $idrecipient = $this->userIsRecipientOfFamily($idmember, $idfamily);
+        $memberData['idrecipient'] = $idrecipient ? $idrecipient : null;
         return $memberData;
     }
 
     private function getFamilyMembers(int $idfamily)
     {
-        $members = [];
-        $idmembers = $this->db->request([
+        $members = $this->db->request([
             'query' => 'SELECT iduser FROM family_has_member WHERE idfamily = ?;',
             'type' => 'i',
             'content' => [$idfamily],
             'array' => true,
         ]);
-        if (!empty($idmembers)) {
-            foreach ($idmembers as &$member) $member = $member[0];
-            $idmembers = implode(',', $idmembers);
-            foreach ($this->db->request([
-                'query' => "SELECT iduser as id,first_name,last_name,avatar FROM user WHERE iduser IN ($idmembers);",
-            ]) as $member) $members[$member['id']] = $member;
-        }
+        if (empty($members)) return [];
+        foreach ($members as &$member) $member = $member[0];
+        return $members;
+    }
+
+    private function getFamilyMembersData(int $idfamily)
+    {
+        $membersid = $this->getFamilyMembers($idfamily);
+        if (empty($membersid)) return [];
+        $members = [];
+        foreach ($membersid as $memberid) $members[$memberid] = $this->getFamilyMemberData($idfamily, $memberid);
         return $members;
     }
 
@@ -630,14 +663,13 @@ trait Gazet
 
     private function getFamilyRequests(int $idfamily)
     {
-        // if (!$this->familyHasRequest($idfamily)) return false;
         $requests = [];
         foreach ($this->db->request([
             'query' => 'SELECT iduser FROM family_request WHERE idfamily = ?;',
             'type' => 'i',
             'content' => [$idfamily],
             'array' => true,
-        ]) as $user) $requests[] = ['id' => $user[0], ...$this->getUserName($user[0])];
+        ]) as $user) $requests[] = $this->getUserData($user[0]);
         return $requests;
     }
 
@@ -673,7 +705,7 @@ trait Gazet
     {
         $idaddress = $this->getRecipientAddressId($idrecipient);
         return $this->db->request([
-            'query' => 'SELECT first_name,last_name,phone,field1,postal,city,state,country FROM address WHERE idaddress = ? LIMIT 1;',
+            'query' => 'SELECT name,phone,field1,field2,field3,postal,city,state,country FROM address WHERE idaddress = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idaddress],
         ])[0];
@@ -710,7 +742,7 @@ trait Gazet
     {
         return [
             ...$this->db->request([
-                'query' => 'SELECT idrecipient,display_name,referent,birth_date FROM recipient WHERE idrecipient = ? LIMIT 1;',
+                'query' => 'SELECT idrecipient,display_name,iduser,referent,birthdate,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
                 'type' => 'i',
                 'content' => [$idrecipient],
             ])[0],
@@ -956,7 +988,7 @@ trait Gazet
     private function getUserData(int $iduser)
     {
         return $this->db->request([
-            'query' => 'SELECT last_name,first_name,theme,email,phone,avatar FROM user WHERE iduser = ? LIMIT 1;',
+            'query' => 'SELECT iduser as id,last_name,first_name,theme,email,phone,avatar FROM user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
@@ -1053,10 +1085,10 @@ trait Gazet
         foreach ($families as &$family) {
             if (empty($family['invitation']) && empty($family['request'])) {
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
-                $family['members'] = $this->getFamilyMembers($family['id']); // get members
+                $family['members'] = $this->getFamilyMembersData($family['id']); // get members
                 if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
-                    $family['invitations'] = $this->getFamilyInvitations($iduser, $family['id']);
-                    $family['requests'] = $this->getFamilyRequests($iduser, $family['id']);
+                    $family['invitations'] = $this->getFamilyInvitations($family['id']);
+                    $family['requests'] = $this->getFamilyRequests($family['id']);
                 }
             }
         }
@@ -1709,20 +1741,19 @@ trait Gazet
         return true;
     }
 
-    private function setRecipientAvatar(int $iduser, int $idrecipient, string $key)
-    {
-        // TODO: check if user has right to do it
-        $newKey = $this->s3->move($key);
-        $idobject = $this->getRecipientAvatar($idrecipient);
-        if ($idobject) return $this->updateS3Object($idobject, $newKey);
-        $idobject = $this->setS3Object($iduser, $newKey);
-        $this->db->request([
-            'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$idobject, $idrecipient],
-        ]);
-        return $idobject;
-    }
+    // private function setRecipientAvatar(int $iduser, int $idrecipient, string $key)
+    // {
+    //     $newKey = $this->s3->move($key);
+    //     $idobject = $this->getRecipientAvatar($idrecipient);
+    //     if ($idobject) return $this->updateS3Object($idobject, $newKey);
+    //     $idobject = $this->setS3Object($iduser, $newKey);
+    //     $this->db->request([
+    //         'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
+    //         'type' => 'ii',
+    //         'content' => [$idobject, $idrecipient],
+    //     ]);
+    //     return $idobject;
+    // }
 
     private function setRecipientReferent(int $iduser, int $idrecipient, int $idreferent)
     {
@@ -1756,31 +1787,6 @@ trait Gazet
 
     // }
 
-    private function updateS3Object(int $idobject, string $key)
-    {
-        $this->removeS3ObjectFromKey($this->getS3ObjectKeyFromId($idobject));
-        $this->db->request([
-            'query' => 'UPDATE s3 SET name = ? WHERE idobject = ? LIMIT 1;',
-            'type' => 'si',
-            'content' => [$key, $idobject],
-        ]);
-        return $idobject;
-    }
-
-    private function updateUserAvatar(int $iduser, string $key)
-    {
-        $newKey = $this->s3->move($key);
-        $idobject = $this->getUserAvatar($iduser);
-        if ($idobject) return $this->updateS3Object($idobject, $newKey);
-        $idobject = $this->setS3Object($iduser, $newKey);
-        $this->db->request([
-            'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$idobject, $iduser],
-        ]);
-        return $idobject;
-    }
-
     private function testerProcess(int $iduser)
     {
         print('#### Tester process for user ' . $iduser . ' ####' . PHP_EOL);
@@ -1802,11 +1808,10 @@ trait Gazet
         $this->addUserToFamily($iduser, $families[1]); // add user as member and recipient of second family
         $this->createRecipient($iduser, $families[1], [
             'display_name' => $this->getAvailableRecipientName($families[1], 'user ' . $iduser),
-            'birth_date' => '2023-01-06',
-            'last_name' => 'User',
-            'first_name' => 'Tester',
+            'birthdate' => '2023-01-06',
+            'name' => 'User Tester',
             'phone' => '+33612345678',
-            'address' => 'Test',
+            'field1' => 'Test',
             'postal' => '12345',
             'city' => 'Test',
             'state' => 'Test',
@@ -1832,11 +1837,10 @@ trait Gazet
         while ($i < 10) $this->userUseFamilyCode($bots[$i++], $this->getFamilyCode($idfamily)); // the 2 last users request to join family
         $this->createRecipient($iduser, $idfamily, [ // create a recipient by the admin
             'display_name' => 'Recipient ' . $i - 9,
-            'birth_date' => '2023-01-06',
-            'last_name' => 'Buddy',
-            'first_name' => 'Recipient ' . $i - 9,
+            'birthdate' => '2023-01-06',
+            'name' => 'Buddy Recipient ' . $i - 9,
             'phone' => '+336123456' . $i++ + 1,
-            'address' => 'Test',
+            'field1' => 'Test',
             'postal' => '12345',
             'city' => 'Test',
             'state' => 'Test',
@@ -1844,11 +1848,10 @@ trait Gazet
         ]);
         $this->createRecipient($bots[$i - 11], $idfamily, [ // create a recipient by a member
             'display_name' => 'Recipient ' . $i - 9,
-            'birth_date' => '2023-01-06',
-            'last_name' => 'Buddy',
-            'first_name' => 'Recipient ' . $i - 9,
+            'birthdate' => '2023-01-06',
+            'name' => 'Buddy Recipient ' . $i - 9,
             'phone' => '+336123456' . $i++ + 1,
-            'address' => 'Test',
+            'field1' => 'Test',
             'postal' => '12345',
             'city' => 'Test',
             'state' => 'Test',
@@ -1856,40 +1859,204 @@ trait Gazet
         ]);
     }
 
+    private function updateMember(int $iduser, array $parameters)
+    {
+        var_dump($parameters);
+        $response = [];
+        // if user's data modifed
+        if (!empty($parameters['user']['id']) && $iduser === $parameters['user']['id']) {
+            $response['user'] = $this->updateUser($iduser, $parameters['user']);
+            if (!$response['user']) return false; // TODO: handle errors in a better way
+            $response['user']['id'] = $parameters['user']['id'];
+        }
+        // if recipient's data modified
+        if (!empty($parameters['recipient']['id'])) {
+            $response['recipient'] = $this->updateRecipient($iduser, $parameters['recipient']['id'], $parameters['recipient']);
+            if (!$response['recipient']) {
+                print('updateMember: FALSE' . PHP_EOL);
+                return false;
+            }
+        }
+        // if recipient's address modified
+        // if (!empty($parameters['recipient']['address'])) {
+        //     // update address
+        //     $response['recipient']['address'] = $this->updateRecipientAddress($iduser, $parameters['recipient']['id'], $parameters['recipient']['address']);
+        // }
+        var_dump($response);
+        return $response;
+    }
+
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient))) return false;
-        $this->db->request([
-            'query' => 'UPDATE recipient SET display_name = ?, birth_date = ? WHERE idrecipient = ? LIMIT 1;',
-            'type' => 'ssi',
-            'content' => [$parameters['display_name'], $parameters['birth_date'], $idrecipient],
-        ]);
-        $idaddress = $this->getRecipientAddressId($idrecipient);
-        $this->db->request([
-            'query' => 'UPDATE address SET 
-                first_name = ?,
-                last_name = ?,
-                phone = ?,
-                field1 = ?,
-                postal = ?,
-                city = ?,
-                state = ?,
-                country = ?
-                WHERE idaddress = ? LIMIT 1;',
-            'type' => 'ssssssssi',
-            'content' => [
-                $parameters['first_name'],
-                $parameters['last_name'],
-                $parameters['phone'],
-                $parameters['field1'],
-                $parameters['postal'],
-                $parameters['city'],
-                $parameters['state'],
-                $parameters['country'],
-                $idaddress
-            ],
-        ]);
+        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) || !$this->userIsReferent($iduser, $idrecipient)) {
+            print('updateRecipient: FALSE' . PHP_EOL);
+            return false;
+        }
+        if (count($parameters) > 2) {
+            $set = [];
+            $type = '';
+            $content = [];
+            if (!empty($parameters['display_name'])) {
+                $set[] = 'display_name = ?';
+                $type .= 's';
+                $content[] = $parameters['display_name'];
+            }
+            if (!empty($parameters['birthdate'])) {
+                $set[] = 'birthdate = ?';
+                $type .= 's';
+                $content[] = $parameters['birthdate'];
+            }
+            $set = implode(',', $set);
+            $this->db->request([
+                'query' => 'UPDATE recipient SET ' . $set . ' WHERE idrecipient = ? LIMIT 1;',
+                'type' => $type . 'i',
+                'content' => [...$content, $idrecipient],
+            ]);
+        }
+        if (!empty($parameters['address'])) $this->updateRecipientAddress($iduser, $idrecipient, $parameters['address']);
+
         return $this->getRecipientData($idrecipient);
+    }
+
+    private function updateRecipientAddress(int $iduser, int $idrecipient, array $address)
+    {
+        if (!$this->userIsReferent($iduser, $idrecipient)) return false;
+        $idaddress = $this->getRecipientAddressId($idrecipient);
+        $set = [];
+        $type = '';
+        $content = [];
+        if (!empty($address['name'])) {
+            $set[] = 'name = ?';
+            $type .= 's';
+            $content[] = $address['name'];
+        }
+        if (!empty($address['phone'])) {
+            $set[] = 'phone = ?';
+            $type .= 's';
+            $content[] = $address['phone'];
+        }
+        if (!empty($address['field1'])) {
+            $set[] = 'field1 = ?';
+            $type .= 's';
+            $content[] = $address['field1'];
+        }
+        if (!empty($address['field2'])) {
+            $set[] = 'field2 = ?';
+            $type .= 's';
+            $content[] = $address['field2'];
+        }
+        if (!empty($address['field3'])) {
+            $set[] = 'field3 = ?';
+            $type .= 's';
+            $content[] = $address['field3'];
+        }
+        if (!empty($address['postal'])) {
+            $set[] = 'postal = ?';
+            $type .= 's';
+            $content[] = $address['postal'];
+        }
+        if (!empty($address['city'])) {
+            $set[] = 'city = ?';
+            $type .= 's';
+            $content[] = $address['city'];
+        }
+        if (!empty($address['state'])) {
+            $set[] = 'state = ?';
+            $type .= 's';
+            $content[] = $address['state'];
+        }
+        if (!empty($address['country'])) {
+            $set[] = 'country = ?';
+            $type .= 's';
+            $content[] = $address['country'];
+        }
+        $set = implode(',', $set);
+        $this->db->request([
+            'query' => 'UPDATE address SET ' . $set . ' WHERE idaddress = ? LIMIT 1;',
+            'type' => $type . 'i',
+            'content' => [...$content, $idaddress],
+        ]);
+        return true;
+    }
+
+    private function updateRecipientAvatar(int $iduser, int $idrecipient, string $key)
+    {
+        if (!$this->userIsReferent($iduser, $idrecipient)) return false;
+        $newKey = $this->s3->move($key);
+        $idobject = $this->getRecipientAvatar($idrecipient);
+        if ($idobject) return $this->updateS3Object($idobject, $newKey);
+        $idobject = $this->setS3Object($iduser, $newKey);
+        $this->db->request([
+            'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idobject, $idrecipient],
+        ]);
+        return $idobject;
+    }
+
+    private function updateS3Object(int $idobject, string $key)
+    {
+        $this->removeS3ObjectFromKey($this->getS3ObjectKeyFromId($idobject));
+        $this->db->request([
+            'query' => 'UPDATE s3 SET name = ? WHERE idobject = ? LIMIT 1;',
+            'type' => 'si',
+            'content' => [$key, $idobject],
+        ]);
+        return $idobject;
+    }
+
+    private function updateUser(int $iduser, array $parameters)
+    {
+        // TODO: change email or phone with verification process
+        $set = [];
+        $type = '';
+        $content = [];
+        if (!empty($parameters['first_name'])) {
+            $set[] = 'first_name = ?';
+            $type .= 's';
+            $content[] = $parameters['first_name'];
+        }
+        if (!empty($parameters['last_name'])) {
+            $set[] = 'last_name = ?';
+            $type .= 's';
+            $content[] = $parameters['last_name'];
+        }
+        if (!empty($parameters['birthdate'])) {
+            $set[] = 'birthdate = ?';
+            $type .= 's';
+            $content[] = $parameters['birthdate'];
+        }
+        $set = implode(',', $set);
+        $this->db->request([
+            'query' => 'UPDATE user SET ' . $set . ' WHERE iduser = ? LIMIT 1;',
+            'type' => $type . 'i',
+            'content' => [...$content, $iduser],
+        ]);
+        return $this->getUserData($iduser);
+    }
+
+    private function updateUserAvatar(int $iduser, string $key)
+    {
+        $newKey = $this->s3->move($key);
+        $idobject = $this->getUserAvatar($iduser);
+        if ($idobject) return $this->updateS3Object($idobject, $newKey);
+        $idobject = $this->setS3Object($iduser, $newKey);
+        $this->db->request([
+            'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idobject, $iduser],
+        ]);
+        return $idobject;
+    }
+
+    private function updateUserEmail(int $iduser, string $email)
+    {
+        // TODO: code update user email
+    }
+
+    private function updateUserPhone(int $iduser, string $phone)
+    {
+        // TODO: code update user phone
     }
 
     /**
@@ -1907,7 +2074,7 @@ trait Gazet
     private function userCanReadObject(int $iduser, int $idobject)
     {
         $object = $this->getS3ObjectData($idobject);
-        if (!$object) return false;
+        if (!$object) return false; // idobject doesn't exist
         // if user is from set family
         if (!empty($object['family'])) return $this->userIsMemberOfFamily($iduser, $object['family']) ? true : false;
         // if user is owner
@@ -1917,7 +2084,7 @@ trait Gazet
 
     private function userGetFile(int $iduser, int $idobject)
     {
-        if (!$this->userCanReadObject($iduser, $idobject)) return false;
+        if (!$this->userCanReadObject($iduser, $idobject)) return false; // if file doesn't exist in s3
         return ($this->s3->presignedUriGet($this->getS3ObjectKeyFromId($idobject)));
     }
 

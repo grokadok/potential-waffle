@@ -28,7 +28,6 @@ trait Http
                 // $iduser = $this->getUserIdFromFirebase($post['sub']);
 
                 // if user doesn't exists in db
-                // var_dump($post);
                 if (!$iduser) {
                     // if gmail address corresponds to existing user, link firebase user to it
                     $emailFinal = gmailNoPeriods($post['email']);
@@ -97,14 +96,6 @@ trait Http
 
             if ($f === 3) {
                 $responseContent = ['f' => 3, 'families' => $this->getUserFamilies($iduser)];
-            }
-
-            /////////////////////////////////////////////////////
-            // GET FAMILY DATA  (31)
-            /////////////////////////////////////////////////////
-
-            if ($f === 31) {
-                $responseContent = ['f' => 31, 'family' => $this->getUserFamilyData($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -196,7 +187,7 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // HANDLE AVATAR UPLOAD CONFIRMATION (15)
+            // HANDLE USER AVATAR UPLOAD CONFIRMATION (15)
             /////////////////////////////////////////////////////
 
             if ($f === 15) {
@@ -285,7 +276,50 @@ trait Http
                 $responseContent = ['f' => 25, 'removed' => $this->removeUserAvatar($iduser)];
             }
 
+            /////////////////////////////////////////////////////
+            // UPDATE USER DATA  (26)
+            /////////////////////////////////////////////////////
 
+            if ($f === 26) {
+                $responseContent = ['f' => 26, 'updated' => $this->updateMember($iduser, $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // HANDLE USER AVATAR UPLOAD CONFIRMATION (27)
+            /////////////////////////////////////////////////////
+
+            if ($f === 27) {
+                $responseContent = ['f' => 27, 'uploaded' => $this->updateRecipientAvatar($iduser, $post['i'], $post['k'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET FAMILY DATA  (31)
+            /////////////////////////////////////////////////////
+
+            if ($f === 31) {
+                $responseContent = ['f' => 31, 'family' => $this->getUserFamilyData($iduser, $post['i'])];
+            }
+
+
+
+            /////////////////////////////////////////////////////
+            // CLEAN S3 FROM UNUSED ITEMS (998)
+            /////////////////////////////////////////////////////
+
+            if ($f === 997) {
+                $objects = $this->s3->listObjects()['Contents'];
+                foreach ($objects as &$object) $object = $object['Key'];
+                var_dump($objects);
+                $responseContent = ['f' => 997];
+            }
+
+            /////////////////////////////////////////////////////
+            // CLEAN S3 FROM UNUSED ITEMS (998)
+            /////////////////////////////////////////////////////
+
+            if ($f === 998) {
+                $responseContent = ['f' => 998, 'cleaned' => $this->cleanS3Bucket()];
+            }
 
             /////////////////////////////////////////////////////
             // EMPTY S3 (999)
@@ -341,11 +375,10 @@ trait Http
             while ($i < 11) $this->userUseFamilyCode($users[$i++ - 1], $this->getFamilyCode($family[0])); // the 2 last users request to join family
             while ($i < 13) $this->createRecipient($users[$i - 11], $family[0], [ // create a recipient by the admin and by one member
                 'display_name' => 'Recipient ' . $i - 10,
-                'birth_date' => '2023-01-06',
-                'last_name' => 'Buddy',
-                'first_name' => 'Recipient ' . $i - 10,
+                'birthdate' => '2023-01-06',
+                'name' => 'Buddy Recipient ' . $i - 10,
                 'phone' => '+336123456' . $i++,
-                'address' => 'Test',
+                'field1' => '97 Gazet\' Street',
                 'postal' => '12345',
                 'city' => 'Test',
                 'state' => 'Test',
