@@ -318,7 +318,10 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 998) {
-                $responseContent = ['f' => 998, 'cleaned' => $this->cleanS3Bucket()];
+                $responseContent = [
+                    'f' => 998,
+                    'cleaned' => $this->cleanS3Bucket(),
+                ];
             }
 
             /////////////////////////////////////////////////////
@@ -326,7 +329,10 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 999) {
-                $responseContent = ['f' => 999, 'emptied' => $this->s3->emptyBucket()];
+                $responseContent = [
+                    'f' => 999,
+                    // 'emptied' => $this->s3->emptyBucket()
+                ];
             }
 
 
