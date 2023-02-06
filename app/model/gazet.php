@@ -338,7 +338,11 @@ trait Gazet
     private function familyInvitationAccept($iduser, $idfamily)
     {
         if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // if already member, false
+        // if already member, remove invitation
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) {
+            $this->familyInvitationRemove($iduser, $idfamily);
+            return false;
+        } // if already member, false
         if (!$this->familyInvitationIsApproved($iduser, $idfamily)) {
             $this->db->request([ // else set accepted
                 'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
@@ -383,6 +387,7 @@ trait Gazet
     private function familyInvitationFinalize($iduser, $idfamily)
     {
         $this->familyInvitationRemove($iduser, $idfamily); // remove familyInvitation
+        $this->familyRequestRemove($iduser, $idfamily); // remove family request
         if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false;
         $this->addUserToFamily($iduser, $idfamily);
         return true;
@@ -471,14 +476,30 @@ trait Gazet
 
     private function familyRequestApprove(int $iduser, int $requester, int $idfamily)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if user is admin of family
-        if ($this->userIsMemberOfFamily($requester, $idfamily)) return false; // if requester is not member of family
-        $this->addUserToFamily($iduser, $idfamily); // add requester to family
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // false if user is not admin of family
+        // if requester is member of family, remove request
+        if (!$this->userIsMemberOfFamily($requester, $idfamily)) {
+            $this->addUserToFamily($requester, $idfamily); // add requester to family
+        }
+        $this->familyRequestRemove($requester, $idfamily);
+        return $this->getUserFamilyData($iduser, $idfamily);
+    }
+
+    private function familyRequestRefuse(int $iduser, int $idrequester, int $idfamily)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
+        // TODO: send notification to requester
+        $this->familyRequestRemove($idrequester, $idfamily);
+        return $this->getUserFamilyData($iduser, $idfamily);
+    }
+
+    private function familyRequestRemove(int $iduser, int $idfamily)
+    {
         $this->db->request([
-            'query' => 'DELETE FROM family_request WHERE idfamily = ? AND iduser = ? LIMIT 1;',
+            'query' => 'DELETE FROM family_request WHERE iduser = ? AND idfamily = ? LIMIT 1;',
             'type' => 'ii',
-            'content' => [$idfamily, $iduser],
-        ]); // remove request
+            'content' => [$iduser, $idfamily],
+        ]);
         return true;
     }
 
@@ -550,12 +571,17 @@ trait Gazet
      */
     private function getFamilyDisplayName(int $iduser, int $idfamily)
     {
-        return $this->db->request([
+        return $this->userIsMemberOfFamily($iduser, $idfamily) ? ($this->db->request([
             'query' => 'SELECT display_name FROM family_has_member WHERE idfamily = ? AND iduser = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idfamily, $iduser],
             'array' => true,
-        ])[0][0] ?? false;
+        ])[0][0] ?? false) : $this->db->request([
+            'query' => 'SELECT name FROM family WHERE idfamily = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfamily],
+            'array' => true
+        ])[0][0];
     }
 
     private function getFamilyInvitations(int $idfamily)
@@ -1031,8 +1057,10 @@ trait Gazet
             'array' => true,
         ]) as $family) {
             $families[$family[0]] = [
+                'invitation' => false,
                 'member' => true,
                 'name' => $family[1],
+                'request' => false,
             ];
         }
 
@@ -1064,11 +1092,13 @@ trait Gazet
         $response = [];
         foreach (array_keys($families) as $key) {
             $families[$key]['id'] = $key;
+            $families[$key]['invitation'] = $families[$key]['invitation'] ?? false;
             $families[$key]['code'] = $this->getFamilyCode($key);
             $families[$key]['admin'] = $families[$key]['admin'] ?? false;
             $families[$key]['member'] = $families[$key]['member'] ?? false;
             $families[$key]['name'] = $families[$key]['name'] ?? $this->getAvailableFamilyName($iduser, $key, $this->getFamilyName($key));
             $families[$key]['recipient'] = $families[$key]['recipient'] ?? false;
+            $families[$key]['request'] = $families[$key]['request'] ?? false;
             $families[$key]['default'] = $key === $default ? true : false;
             $response[] = $families[$key];
         }
@@ -1097,22 +1127,30 @@ trait Gazet
 
     private function getUserFamilyData(int $iduser, int $idfamily)
     {
-        if (!$this->familyExists($idfamily)) return false;
+        if (
+            !$this->familyExists($idfamily)
+            || (!$this->userIsMemberOfFamily($iduser, $idfamily) && !$this->userHasFamilyInvitation($iduser, $idfamily) && !$this->userHasFamilyRequest($iduser, $idfamily))
+        ) return false;
         $family = [
-            'id' => $idfamily,
-            'code' => $this->getFamilyCode($idfamily),
-            'name' => $this->getFamilyDisplayName($iduser, $idfamily),
             'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
-            'member' => $this->userIsMemberOfFamily($iduser, $idfamily),
-            'recipient' => $this->userIsRecipientOfFamily($iduser, $idfamily),
+            'code' => $this->getFamilyCode($idfamily),
             'default' => $this->familyIsDefaultForUser($iduser, $idfamily),
-            'recipients' => $this->getFamilyRecipientsData($idfamily),
-            'members' => $this->getFamilyMembers($idfamily),
+            'id' => $idfamily,
+            'member' => $this->userIsMemberOfFamily($iduser, $idfamily),
+            'name' => $this->getFamilyDisplayName($iduser, $idfamily),
+            'recipient' => $this->userIsRecipientOfFamily($iduser, $idfamily),
+            'request' => $this->userHasFamilyRequest($iduser, $idfamily),
+            'invitation' => $this->userHasFamilyInvitation($iduser, $idfamily),
         ];
-        if ($family['admin']) {
-            $family['invitations'] = $this->getFamilyInvitations($iduser, $idfamily);
-            $family['requests'] = $this->getFamilyRequests($iduser, $idfamily);
+        if (!$family['request'] && !$family['invitation']) {
+            $family['recipients'] = $this->getFamilyRecipientsData($idfamily);
+            $family['members'] = $this->getFamilyMembersData($idfamily);
         }
+        if ($family['admin']) {
+            $family['invitations'] = $this->getFamilyInvitations($idfamily);
+            $family['requests'] = $this->getFamilyRequests($idfamily);
+        }
+        var_dump($family);
         return $family;
     }
 
@@ -1381,7 +1419,7 @@ trait Gazet
     private function removeMemberFromFamily(int $iduser, int $idfamily, ?int $idmember)
     {
         $idmember = $idmember ?? $iduser;
-        // TODO: if last member of family, remove family.
+        // TODO: if last member of family, remove family. !!! SHOULDN'T be possible, last member === admin, admin has to remove family, not suppress himself
         if (!$this->familyHasOtherMembers($idmember, $idfamily)) return $this->deleteFamily($iduser, $idfamily);
 
         // if user != member or not admin of family, return false
@@ -1422,7 +1460,7 @@ trait Gazet
 
         // TODO: send push notification to removed member
 
-        return ['state' => 0, 'default' => $default];
+        return ['state' => 0, 'default' => $iduser === $idmember ? $default : false, 'family' => $this->getUserFamilyData($iduser, $idfamily)]; // TODO: code != states for removeMemberFromFamily
     }
 
     private function removePublicationMovie(int $idmovie)
@@ -2100,6 +2138,27 @@ trait Gazet
         ]));
     }
 
+    private function userHasFamilyInvitation(int $iduser, int $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_invitation WHERE invitee = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+        ]));
+    }
+
+    /**
+     * Returns whether or not a user has applied to a family.
+     */
+    private function userHasFamilyRequest(int $iduser, int $idfamily)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM family_request WHERE iduser = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+        ]));
+    }
+
     /**
      * Returns true if user is admin of any family.
      */
@@ -2189,15 +2248,18 @@ trait Gazet
 
     private function userUseFamilyCode(int $iduser, string $code)
     {
+        // TODO: userUseFamilyCode: handle all cases better than with false
         $idfamily = $this->getFamilyWithCode($code); // get family with code
-        if (!$idfamily) return false; // if no family, false
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // if already member of family, false
+        if (!$idfamily) return false; // false if no family
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // false if already member of family
+        if ($this->userHasFamilyRequest($iduser, $idfamily)) return false; // false if user already applied
         $this->db->request([
             'query' => 'INSERT INTO family_request (idfamily,iduser) VALUES (?,?);',
             'type' => 'ii',
             'content' => [$idfamily, $iduser],
         ]);
-        return true;
+        print('User ' . $iduser . ' successfuly applied to family ' . $idfamily . PHP_EOL);
+        return $this->getUserFamilyData($iduser, $idfamily); // WONT WORK, user's not a member yet
     }
 
     private function usersHaveCommonFamily(int $user1, int $user2)

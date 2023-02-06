@@ -95,7 +95,8 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 3) {
-                $responseContent = ['f' => 3, 'families' => $this->getUserFamilies($iduser)];
+                $responseContent = ['f' => 3, 'families' => $this->getUserFamiliesData($iduser)];
+                // $responseContent = ['f' => 3, 'families' => $this->getUserFamilies($iduser)];
             }
 
             /////////////////////////////////////////////////////
@@ -291,6 +292,15 @@ trait Http
             if ($f === 27) {
                 $responseContent = ['f' => 27, 'uploaded' => $this->updateRecipientAvatar($iduser, $post['i'], $post['k'])];
             }
+
+            /////////////////////////////////////////////////////
+            // ADMIN REFUSES REQUEST (28)
+            /////////////////////////////////////////////////////
+
+            if ($f === 28) {
+                $responseContent = ['f' => 28, 'denied' => $this->familyRequestRefuse($iduser, $post['r'], $post['i'])];
+            }
+
 
             /////////////////////////////////////////////////////
             // GET FAMILY DATA  (31)
