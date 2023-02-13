@@ -643,19 +643,46 @@ trait Gazet
     /**
      * Returns publications for given family, between optional dates.
      */
-    private function getFamilyPublications(int $idfamily, array $range = null)
+    private function getFamilyPublications(int $iduser, int $idfamily, array $range = null)
     {
+        // if user from family
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+
         // if range
-        $rangeString = '';
-        if ($range) $rangeString = ' AND created > TIMESTAMP(FROM_UNIXTIME(' . $range['from'] . ')) AND created < TIMESTAMP(FROM_UNIXTIME(' . $range['to'] . '))';
+        // $rangeString = '';
+        // if ($range) $rangeString = ' AND created > TIMESTAMP(FROM_UNIXTIME(' . $range['from'] . ')) AND created < TIMESTAMP(FROM_UNIXTIME(' . $range['to'] . '))';
 
         $publications = $this->db->request([
-            'query' => "SELECT idpublication, idpublication_type,author, description, created WHERE idfamily = ?$rangeString;",
-            'type' => 'i',
-            'content' => [$idfamily],
+            'query' => "SELECT idpublication,
+            type,
+            author,
+            description,
+            idlayout,
+            idbackground,
+            full_page,
+            private,
+            created
+            FROM publication
+            WHERE idfamily = ? AND (author = ? OR private = 0) ORDER BY created;",
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
         ]);
-        unset($rangeString);
-        foreach ($publications as &$publication) $publication['author'] = $this->getUserName($publication['author']);
+        // unset($rangeString);
+
+        foreach ($publications as &$publication) {
+            // get like
+            $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
+            // get likes count
+            $pulication['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
+            // get comments count
+            $publication['comments'] = $this->getPublicationCommentsCount($publication['idpublication']);
+            // get images
+            $publication['images'] = $this->getPublicationPictures($publication['idpublication']);
+            // get text
+            if ($publication['type'] === 1)
+                $publication['text'] = $this->getPublicationText($publication['idpublication']);
+            // $publication['author'] = $this->getUserName($publication['author']); // users info already in app
+        }
         return $publications;
     }
 
@@ -724,6 +751,68 @@ trait Gazet
     }
 
     /**
+     * Returns an array of comment's id for given publication.
+     */
+    private function getPublicationComments(int $idpublication)
+    {
+        $comments = $this->db->request([
+            'query' => 'SELECT idcomment FROM publication_has_comment WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ]);
+        $commentsid = [];
+        foreach ($comments as $comment) $commentsid[] = $comment[0];
+        return $commentsid;
+    }
+
+    private function getPublicationCommentsCount(int $idpublication)
+    {
+        // TODO: check if it returns the right count of comments
+        return $this->db->request([
+            'query' => 'SELECT COUNT(*) FROM publication_has_comment WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ])[0][0];
+    }
+
+    private function getPublicationLikesCount(int $idpublication)
+    {
+        // TODO: check if it returns the right count of likes
+        return $this->db->request([
+            'query' => 'SELECT COUNT(*) FROM publication_has_like WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ])[0][0];
+    }
+
+    /**
+     * Returns an array of picture's id for given publication.
+     */
+    private function getPublicationPictures(int $idpublication)
+    {
+        $pictures = $this->db->request([
+            'query' => 'SELECT idpicture,place,title FROM publication_has_picture WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ]);
+        return $pictures;
+    }
+
+    private function getPublicationText(int $idpublication)
+    {
+        return $this->db->request([
+            'query' => 'SELECT content FROM text WHERE idpublication = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
      * Returns recipient address data
      * @return array Address data
      */
@@ -775,37 +864,6 @@ trait Gazet
             'address' => $this->getRecipientAddress($idrecipient),
             'subscription' => $this->getRecipientSubscription($idrecipient)
         ];
-    }
-
-    /**
-     * Returns an array of comment's id for given publication.
-     */
-    private function getPublicationComments(int $idpublication)
-    {
-        $comments = $this->db->request([
-            'query' => 'SELECT idcomment FROM publication_has_comment WHERE idpublication = ?;',
-            'type' => 'i',
-            'content' => [$idpublication],
-            'array' => true,
-        ]);
-        $commentsid = [];
-        foreach ($comments as $comment) $commentsid[] = $comment[0];
-        return $commentsid;
-    }
-
-    /**
-     * Returns an array of picture's id for given publication.
-     */
-    private function getPublicationPictures(int $idpublication)
-    {
-        $picturesid = [];
-        foreach ($this->db->request([
-            'query' => 'SELECT idpicture FROM publication_has_picture WHERE idpublication = ?;',
-            'type' => 'i',
-            'content' => [$idpublication],
-            'array' => true,
-        ]) as $picture) $picturesid[] = $picture[0];
-        return $picturesid;
     }
 
     /**
@@ -1127,6 +1185,7 @@ trait Gazet
 
     private function getUserFamilyData(int $iduser, int $idfamily)
     {
+        // TODO: getUserFamilyData: fix != family name if member or requestee/invitee (if duplicate family name)
         if (
             !$this->familyExists($idfamily)
             || (!$this->userIsMemberOfFamily($iduser, $idfamily) && !$this->userHasFamilyInvitation($iduser, $idfamily) && !$this->userHasFamilyRequest($iduser, $idfamily))
@@ -1150,7 +1209,6 @@ trait Gazet
             $family['invitations'] = $this->getFamilyInvitations($idfamily);
             $family['requests'] = $this->getFamilyRequests($idfamily);
         }
-        var_dump($family);
         return $family;
     }
 
@@ -1758,6 +1816,11 @@ trait Gazet
         return $nextFamily ?? false;
     }
 
+    private function setPublication(int $iduser, int $idfamily, array $parameters)
+    {
+        // TODO code setPublication
+    }
+
     private function setPublicationPicture(int $idpublication, string $key, string $title = '')
     {
         $this->db->request([
@@ -1776,6 +1839,24 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idpublication, $idpicture],
         ]);
+        return true;
+    }
+
+    private function setPublicationText(int $idpublication, string $text)
+    {
+        $idtext = $this->getPublicationText($idpublication);
+        if ($idtext) {
+            $this->db->request([
+                'query' => 'UPDATE text SET content = ? WHERE idpublication = ? LIMIT 1;',
+                'type' => 'si',
+                'content' => [$text, $idpublication],
+            ]);
+        } else
+            $this->db->request([
+                'query' => 'INSERT INTO text (idpublication,content) VALUES (?,?);',
+                'type' => 'is',
+                'content' => [$idpublication, $text],
+            ]);
         return true;
     }
 
@@ -1922,6 +2003,11 @@ trait Gazet
         // }
         var_dump($response);
         return $response;
+    }
+
+    private function updatePublication(int $iduser, int $idpublication, array $parameters)
+    {
+        // TODO: code updatePublication
     }
 
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
@@ -2243,6 +2329,15 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idrecipient, $iduser],
             'array' => true,
+        ]));
+    }
+
+    private function userLikesPublication(int $iduser, int $idpublication)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM publication_has_like WHERE idpublication = ? AND iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idpublication, $iduser],
         ]));
     }
 

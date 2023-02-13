@@ -278,7 +278,7 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // UPDATE USER DATA  (26)
+            // UPDATE USER DATA (26)
             /////////////////////////////////////////////////////
 
             if ($f === 26) {
@@ -303,11 +303,27 @@ trait Http
 
 
             /////////////////////////////////////////////////////
-            // GET FAMILY DATA  (31)
+            // GET FAMILY DATA (31)
             /////////////////////////////////////////////////////
 
             if ($f === 31) {
                 $responseContent = ['f' => 31, 'family' => $this->getUserFamilyData($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET PUBLICATIONS (32)
+            /////////////////////////////////////////////////////
+
+            if ($f === 32) {
+                $responseContent = ['f' => 32, 'publications' => $this->getFamilyPublications($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // ADD PUBLICATION (33)
+            /////////////////////////////////////////////////////
+
+            if ($f === 33) {
+                $responseContent = ['f' => 33, 'added' => $this->setPublication($iduser, $post['i'], $post['p'])];
             }
 
 
