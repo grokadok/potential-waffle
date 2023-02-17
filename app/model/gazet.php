@@ -516,7 +516,7 @@ trait Gazet
             'array' => true,
         ]);
         if (empty($publications)) return false;
-        foreach ($publications as &$publication) $publication = $publication['idpubilcation'];
+        foreach ($publications as &$publication) $publication = $publication[0];
         return $publications;
     }
 
@@ -656,20 +656,21 @@ trait Gazet
             'query' => "SELECT idpublication,
             type,
             author,
-            description,
+            description as text,
             idlayout,
             idbackground,
-            full_page,
             private,
             created
             FROM publication
-            WHERE idfamily = ? AND (author = ? OR private = 0) ORDER BY created;",
+            WHERE idfamily = ? AND (author = ? OR private = 0) ORDER BY created DESC;",
             'type' => 'ii',
             'content' => [$idfamily, $iduser],
         ]);
         // unset($rangeString);
 
         foreach ($publications as &$publication) {
+            // get layout
+            $publication['layout'] = $this->getLayout($publication['idlayout']);
             // get like
             $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
             // get likes count
@@ -679,7 +680,7 @@ trait Gazet
             // get images
             $publication['images'] = $this->getPublicationPictures($publication['idpublication']);
             // get text
-            if ($publication['type'] === 1)
+            if (empty($publication['text']))
                 $publication['text'] = $this->getPublicationText($publication['idpublication']);
             // $publication['author'] = $this->getUserName($publication['author']); // users info already in app
         }
@@ -750,6 +751,15 @@ trait Gazet
         ])[0][0] ?? false;
     }
 
+    private function getLayout(int $idlayout)
+    {
+        return $this->db->request([
+            'query' => 'SELECT identifier,description,quantity,orientation,full_page FROM layout WHERE idlayout = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idlayout],
+        ])[0];
+    }
+
     /**
      * Returns an array of comment's id for given publication.
      */
@@ -794,10 +804,9 @@ trait Gazet
     private function getPublicationPictures(int $idpublication)
     {
         $pictures = $this->db->request([
-            'query' => 'SELECT idpicture,place,title FROM publication_has_picture WHERE idpublication = ?;',
+            'query' => 'SELECT idobject,place,title FROM publication_has_picture WHERE idpublication = ?;',
             'type' => 'i',
             'content' => [$idpublication],
-            'array' => true,
         ]);
         return $pictures;
     }
@@ -1816,28 +1825,73 @@ trait Gazet
         return $nextFamily ?? false;
     }
 
+    // private function getLayout(array $parameters){
+    //     return $this->db->request([
+    //     'query'=>'SELECT idlayout FROM layout WHERE orientation = ? AND quantity = ? AND identifier = ? AND full_page = ? LIMIT 1;',
+    //     'type'=>'',
+    //     'content'=>[$parameters['orientation'],count($parameters['images']),$parameters['identifier'],$parameters['full_page']],
+    //     'array'=>true,
+    //     ])[0][0] ?? false;
+    // }
+
     private function setPublication(int $iduser, int $idfamily, array $parameters)
     {
         // TODO code setPublication
-    }
 
-    private function setPublicationPicture(int $idpublication, string $key, string $title = '')
-    {
+        $into = '';
+        $values = '';
+        $type = '';
+        $content = [];
+        $text = true;
+
+        if (strlen($parameters['text']) < 510) {
+            $text = false;
+            $into .= ',description';
+            $values .= ',?';
+            $type .= 's';
+            $content[] = $parameters['text'];
+        }
+        if (!$parameters['journal']) {
+            $into .= ',idlayout';
+            $values .= ',?';
+            $type .= 'i';
+            $content[] = $this->db->request([
+                'query' => 'SELECT idlayout FROM layout WHERE identifier = ? LIMIT 1;',
+                'type' => 's',
+                'content' => [$parameters['layout']],
+                'array' => true,
+            ])[0][0];
+        }
+
         $this->db->request([
-            'query' => 'INSERT INTO picture (key, title) VALUES (?,?);',
-            'type' => 'ss',
-            'content' => [$key, $title],
+            'query' => 'INSERT INTO publication (author,idfamily,private' . $into . ') VALUES (?,?,?' . $values . ');',
+            'type' => 'iii' . $type,
+            'content' => [$iduser, $idfamily, $parameters['private'] ? 1 : 0, ...$content],
         ]);
-        $idpicture = $this->db->request([
-            'query' => 'SELECT idpicture FROM picture WHERE object_key = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$key],
+
+        $idpublication = $this->db->request([
+            'query' => 'SELECT MAX(idpublication) FROM publication WHERE author = ? AND idfamily = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
             'array' => true,
         ])[0][0];
+
+        if ($text) $this->setPublicationText($idpublication, $parameters['text']);
+
+        if (!empty($parameters['images'])) {
+            foreach ($parameters['images'] as $image) {
+                $this->setPublicationPicture($idpublication, $image);
+            }
+        }
+        return $idpublication;
+    }
+
+    private function setPublicationPicture(int $idpublication, array $picture)
+    {
         $this->db->request([
-            'query' => 'INSERT INTO publication_has_picture (idpublication, idpicture) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$idpublication, $idpicture],
+            'query' => 'INSERT INTO publication_has_picture (idpublication,idobject,place,title) VALUES (?,?,?,?);',
+            'type' => 'iiis',
+            'content' => [$idpublication, $picture['id'], $picture['place'], $picture['title'] ?? ''],
         ]);
         return true;
     }
@@ -2171,6 +2225,12 @@ trait Gazet
             'content' => [$idobject, $iduser],
         ]);
         return $idobject;
+    }
+
+    private function storeS3Object(int $iduser, string $key)
+    {
+        $newKey = $this->s3->move($key);
+        return $this->setS3Object($iduser, $newKey);
     }
 
     private function updateUserEmail(int $iduser, string $email)

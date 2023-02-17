@@ -200,9 +200,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 16) {
-                // move object
-
-                // store object
+                $responseContent = ['f' => 16, 'uploaded' => $this->storeS3Object($iduser, $post['k'])];
             }
 
             /////////////////////////////////////////////////////
