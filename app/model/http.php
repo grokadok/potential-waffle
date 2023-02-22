@@ -324,6 +324,40 @@ trait Http
                 $responseContent = ['f' => 33, 'added' => $this->setPublication($iduser, $post['i'], $post['p'])];
             }
 
+            /////////////////////////////////////////////////////
+            // GET PUBLICATION COMMENTS (34)
+            /////////////////////////////////////////////////////
+
+            if ($f === 34) {
+                $responseContent = ['f' => 34, 'comment' => $this->getPublicationCommentsData($iduser, $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // ADD COMMENT (35)
+            /////////////////////////////////////////////////////
+
+            if ($f === 35) {
+                $responseContent = ['f' => 35, 'added' => $this->setComment($iduser, $post['p'], $post['c'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // USER TOGGLE LIKE ON PUBLICATION (36)
+            /////////////////////////////////////////////////////
+
+            if ($f === 36) {
+                $responseContent = ['f' => 36, 'like' => $this->setPublicationLike($iduser, $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // USER TOGGLE LIKE ON COMMENT (37)
+            /////////////////////////////////////////////////////
+
+            if ($f === 37) {
+                $responseContent = ['f' => 37, 'like' => $this->setCommentLike($iduser, $post['c'])];
+            }
+
+
+
 
 
             /////////////////////////////////////////////////////

@@ -541,6 +541,28 @@ trait Gazet
         return $tempName;
     }
 
+    private function getCommentData(int $iduser, int $idcomment)
+    {
+        $comment = $this->db->request([
+            'query' => 'SELECT iduser,content,created FROM comment WHERE idcomment = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idcomment],
+        ])[0];
+        $comment['likes'] = $this->getCommentLikesCount($idcomment);
+        if ($iduser !== $comment['iduser']) $comment['like'] = $this->userLikesComment($iduser, $idcomment);
+        return $comment;
+    }
+
+    private function getCommentLikesCount(int $idcomment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT COUNT(*) FROM comment_has_like WHERE idcomment = ?;',
+            'type' => 'i',
+            'content' => [$idcomment],
+            'array' => true,
+        ])[0][0];
+    }
+
     /**
      * Returns family admin's id.
      * @return int
@@ -672,9 +694,10 @@ trait Gazet
             // get layout
             $publication['layout'] = $this->getLayout($publication['idlayout']);
             // get like
-            $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
+            if ($iduser !== $publication['author'])
+                $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
             // get likes count
-            $pulication['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
+            $publication['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
             // get comments count
             $publication['comments'] = $this->getPublicationCommentsCount($publication['idpublication']);
             // get images
@@ -760,10 +783,30 @@ trait Gazet
         ])[0];
     }
 
+    private function getPublicationCommentsCount(int $idpublication)
+    {
+        // TODO: check if it returns the right count of comments
+        return $this->db->request([
+            'query' => 'SELECT COUNT(*) FROM publication_has_comment WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ])[0][0];
+    }
+
+    private function getPublicationCommentsData(int $iduser, int $idpublication)
+    {
+        $commentsId = $this->getPublicationCommentsId($idpublication);
+        if (empty($commentsId)) return [];
+        $comments = [];
+        foreach ($commentsId as $id) $comments["$id"] = $this->getCommentData($iduser, $id);
+        return $comments;
+    }
+
     /**
      * Returns an array of comment's id for given publication.
      */
-    private function getPublicationComments(int $idpublication)
+    private function getPublicationCommentsId(int $idpublication)
     {
         $comments = $this->db->request([
             'query' => 'SELECT idcomment FROM publication_has_comment WHERE idpublication = ?;',
@@ -774,17 +817,6 @@ trait Gazet
         $commentsid = [];
         foreach ($comments as $comment) $commentsid[] = $comment[0];
         return $commentsid;
-    }
-
-    private function getPublicationCommentsCount(int $idpublication)
-    {
-        // TODO: check if it returns the right count of comments
-        return $this->db->request([
-            'query' => 'SELECT COUNT(*) FROM publication_has_comment WHERE idpublication = ?;',
-            'type' => 'i',
-            'content' => [$idpublication],
-            'array' => true,
-        ])[0][0];
     }
 
     private function getPublicationLikesCount(int $idpublication)
@@ -1570,7 +1602,7 @@ trait Gazet
     private function removePublication(int $idpublication)
     {
         // comments
-        $commentsid = $this->getPublicationComments($idpublication);
+        $commentsid = $this->getPublicationCommentsId($idpublication);
         if (!empty($commentsid)) {
             $commentsid = implode(',', $commentsid);
             $this->db->request(['query' => "DELETE FROM comment WHERE idcomment IN ($commentsid);"]);
@@ -1771,6 +1803,47 @@ trait Gazet
     }
 
     /**
+     * Add comment to publication, returns updated publication comments.
+     * @return array
+     */
+    private function setComment(int $iduser, int $idpublication, string $comment)
+    {
+        $this->db->request([
+            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
+            'type' => 'is',
+            'content' => [$iduser, $comment],
+        ]);
+        $idcomment = $this->db->request([
+            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
+            'type' => 'is',
+            'content' => [$iduser, $comment],
+            'array' => true,
+        ])[0][0];
+        $this->db->request([
+            'query' => 'INSERT INTO publication_has_comment (idpublication,idcomment) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idpublication, $idcomment],
+        ]);
+        return $this->getPublicationCommentsData($iduser, $idpublication);
+    }
+
+    private function setCommentLike(int $iduser, int $idcomment)
+    {
+        $like = $this->userLikesComment($iduser, $idcomment);
+        if ($like) $this->db->request([
+            'query' => 'DELETE FROM comment_has_like WHERE iduser = ? AND idcomment = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idcomment],
+        ]);
+        else $this->db->request([
+            'query' => 'INSERT INTO comment_has_like (idcomment,iduser) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idcomment, $iduser],
+        ]);
+        return ['liked' => !$like, 'likes' => $this->getCommentLikesCount($idcomment)];
+    }
+
+    /**
      * Sets default family, returns previous default family if set.
      */
     private function setDefaultFamily(int $iduser, int $idfamily)
@@ -1870,7 +1943,7 @@ trait Gazet
         ]);
 
         $idpublication = $this->db->request([
-            'query' => 'SELECT MAX(idpublication) FROM publication WHERE author = ? AND idfamily = ? LIMIT 1;',
+            'query' => 'SELECT idpublication FROM publication WHERE author = ? AND idfamily = ? ORDER BY created DESC LIMIT 1;',
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
             'array' => true,
@@ -1884,6 +1957,22 @@ trait Gazet
             }
         }
         return $idpublication;
+    }
+
+    private function setPublicationLike(int $iduser, int $idpublication)
+    {
+        $like = $this->userLikesPublication($iduser, $idpublication);
+        if ($like) $this->db->request([
+            'query' => 'DELETE FROM publication_has_like WHERE iduser = ? AND idpublication = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idpublication],
+        ]);
+        else $this->db->request([
+            'query' => 'INSERT INTO publication_has_like (idpublication,iduser) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idpublication, $iduser],
+        ]);
+        return ['liked' => !$like, 'likes' => $this->getPublicationLikesCount($idpublication)];
     }
 
     private function setPublicationPicture(int $idpublication, array $picture)
@@ -2389,6 +2478,15 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idrecipient, $iduser],
             'array' => true,
+        ]));
+    }
+
+    private function userLikesComment(int $iduser, int $idcomment)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM comment_has_like WHERE idcomment = ? AND iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idcomment, $iduser],
         ]));
     }
 
