@@ -676,6 +676,7 @@ trait Gazet
 
         $publications = $this->db->request([
             'query' => "SELECT idpublication,
+            title,
             type,
             author,
             description as text,
@@ -794,12 +795,21 @@ trait Gazet
         ])[0][0];
     }
 
-    private function getPublicationCommentsData(int $iduser, int $idpublication)
+    private function getPublicationCommentsData(int $iduser, int $idfamily, int $idpublication)
     {
+        // TODO: separate user commands with security checks and data return from general commands without checks and data, e.g. userGetPublicationCommentsData vs getPublicationCommentsData
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
         $commentsId = $this->getPublicationCommentsId($idpublication);
         if (empty($commentsId)) return [];
-        $comments = [];
-        foreach ($commentsId as $id) $comments["$id"] = $this->getCommentData($iduser, $id);
+        $commentsId = implode(',', $commentsId);
+        $comments = $this->db->request([
+            'query' => 'SELECT idcomment,iduser, content, created FROM comment WHERE idcomment IN (' . $commentsId . ') ORDER BY created DESC;',
+        ]);
+        foreach ($comments as &$comment) {
+            if ($iduser != $comment['iduser'])
+                $comment['like'] = $this->userLikesComment($iduser, $comment['idcomment']);
+            $comment['likes'] = $this->getCommentLikesCount($comment['idcomment']);
+        }
         return $comments;
     }
 
@@ -814,9 +824,8 @@ trait Gazet
             'content' => [$idpublication],
             'array' => true,
         ]);
-        $commentsid = [];
-        foreach ($comments as $comment) $commentsid[] = $comment[0];
-        return $commentsid;
+        foreach ($comments as &$comment) $comment = $comment[0];
+        return $comments;
     }
 
     private function getPublicationLikesCount(int $idpublication)
@@ -831,7 +840,7 @@ trait Gazet
     }
 
     /**
-     * Returns an array of picture's id for given publication.
+     * Returns an associative array of given publication's pictures.
      */
     private function getPublicationPictures(int $idpublication)
     {
@@ -1409,11 +1418,12 @@ trait Gazet
      */
     private function removeComment(int $idcomment)
     {
-        return $this->db->request([
+        $this->db->request([
             'query' => 'DELETE FROM comment WHERE idcomment = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idcomment],
         ]);
+        return true;
     }
 
     /**
@@ -1465,7 +1475,7 @@ trait Gazet
         $publications = $this->getAllFamilyPublications($idfamily);
 
         if (!empty($publications))
-            foreach ($publications as $publication) $this->removePublication($publication);
+            foreach ($publications as $publication) $this->removePublication($iduser, $idfamily, $publication);
 
         $this->db->request([
             'query' => 'DELETE FROM family WHERE idfamily = ? LIMIT 1;',
@@ -1581,7 +1591,9 @@ trait Gazet
 
     private function removePublicationPicture(int $idpicture)
     {
-        // TODO: test function removePublicationPicture
+        // TODO: refactor function removePublicationPicture
+        // delete object
+        // handle remaining pictures' places
         $this->s3->deleteObject($this->db->request([
             'query' => 'SELECT object_key FROM picture WHERE idpicture = ? LIMIT 1;',
             'type' => 'i',
@@ -1609,7 +1621,7 @@ trait Gazet
         }
         // pictures
         $pictures = $this->getPublicationPictures($idpublication);
-        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture);
+        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject']);
         // texts
         $this->db->request([
             'query' => 'DELETE FROM text WHERE idpublication = ?;',
@@ -1617,8 +1629,8 @@ trait Gazet
             'content' => [$idpublication],
         ]);
         // movies
-        $movies = $this->getPublicationMovies($idpublication);
-        if (!empty($movies)) foreach ($movies as $movie) $this->removePublicationMovie($movie);
+        // $movies = $this->getPublicationMovies($idpublication);
+        // if (!empty($movies)) foreach ($movies as $movie) $this->removePublicationMovie($movie);
 
         $this->db->request([
             'query' => 'DELETE FROM publication WHERE idpublication = ? LIMIT 1;',
@@ -1639,7 +1651,7 @@ trait Gazet
             'content' => [$iduser, $idfamily],
             'array' => true,
         ]);
-        foreach ($publications as &$publication) $this->removePublication($publication);
+        foreach ($publications as &$publication) $this->removePublication($iduser, $idfamily, $publication);
         return true;
     }
 
@@ -1806,8 +1818,9 @@ trait Gazet
      * Add comment to publication, returns updated publication comments.
      * @return array
      */
-    private function setComment(int $iduser, int $idpublication, string $comment)
+    private function setComment(int $iduser, int $idfamily, int $idpublication, string $comment)
     {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
         $this->db->request([
             'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
             'type' => 'is',
@@ -1824,7 +1837,7 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idpublication, $idcomment],
         ]);
-        return $this->getPublicationCommentsData($iduser, $idpublication);
+        return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
     }
 
     private function setCommentLike(int $iduser, int $idcomment)
@@ -1937,9 +1950,9 @@ trait Gazet
         }
 
         $this->db->request([
-            'query' => 'INSERT INTO publication (author,idfamily,private' . $into . ') VALUES (?,?,?' . $values . ');',
-            'type' => 'iii' . $type,
-            'content' => [$iduser, $idfamily, $parameters['private'] ? 1 : 0, ...$content],
+            'query' => 'INSERT INTO publication (author,idfamily,private,title' . $into . ') VALUES (?,?,?,?' . $values . ');',
+            'type' => 'iiis' . $type,
+            'content' => [$iduser, $idfamily, $parameters['private'] ? 1 : 0, $parameters['title'], ...$content],
         ]);
 
         $idpublication = $this->db->request([
@@ -2418,6 +2431,15 @@ trait Gazet
         ]));
     }
 
+    private function userIsCommentsAuthor(int $iduser, int $idcomment)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM comment WHERE iduser = ? AND idcomment = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idcomment],
+        ]));
+    }
+
     /**
      * Returns true if user is member of any family.
      */
@@ -2439,6 +2461,15 @@ trait Gazet
             'query' => 'SELECT NULL FROM family_has_member WHERE iduser = ? AND idfamily = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
+        ]));
+    }
+
+    private function userIsPublicationsAuthor(int $iduser, int $idpublication)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM publication WHERE author = ? AND idpublication = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idpublication],
         ]));
     }
 
@@ -2497,6 +2528,32 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idpublication, $iduser],
         ]));
+    }
+
+    private function userRemovesComment(int $iduser, int $idfamily, int $idpublication, int $idcomment)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $idcomment)) return false;
+        $this->removeComment($idcomment);
+        return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
+    }
+
+    private function userRemovesPublication(int $iduser, int $idfamily, int $idpublication)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) || !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
+        $this->removePublication($idpublication);
+        return $this->getFamilyPublications($iduser, $idfamily);
+    }
+
+    private function userSetCommentLike(int $iduser, int $idfamily, int $idcomment)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsCommentsAuthor($iduser, $idcomment)) return false;
+        return $this->setCommentLike($iduser, $idcomment);
+    }
+
+    private function userSetPublicationLike(int $iduser, int $idfamily, int $idpublication)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
+        return $this->setPublicationLike($iduser, $idpublication);
     }
 
     private function userUseFamilyCode(int $iduser, string $code)

@@ -329,7 +329,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 34) {
-                $responseContent = ['f' => 34, 'comment' => $this->getPublicationCommentsData($iduser, $post['p'])];
+                $responseContent = ['f' => 34, 'comments' => $this->getPublicationCommentsData($iduser, $post['i'], $post['p'])];
             }
 
             /////////////////////////////////////////////////////
@@ -337,7 +337,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 35) {
-                $responseContent = ['f' => 35, 'added' => $this->setComment($iduser, $post['p'], $post['c'])];
+                $responseContent = ['f' => 35, 'added' => $this->setComment($iduser, $post['i'], $post['p'], $post['c'])];
             }
 
             /////////////////////////////////////////////////////
@@ -345,7 +345,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 36) {
-                $responseContent = ['f' => 36, 'like' => $this->setPublicationLike($iduser, $post['p'])];
+                $responseContent = ['f' => 36, 'like' => $this->userSetPublicationLike($iduser, $post['i'], $post['p'])];
             }
 
             /////////////////////////////////////////////////////
@@ -353,7 +353,23 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 37) {
-                $responseContent = ['f' => 37, 'like' => $this->setCommentLike($iduser, $post['c'])];
+                $responseContent = ['f' => 37, 'like' => $this->userSetCommentLike($iduser, $post['i'], $post['c'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // DELETE PUBLICATION (38)
+            /////////////////////////////////////////////////////
+
+            if ($f === 38) {
+                $responseContent = ['f' => 38, 'deleted' => $this->userRemovesPublication($iduser, $post['i'], $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // DELETE COMMENT (39)
+            /////////////////////////////////////////////////////
+
+            if ($f === 39) {
+                $responseContent = ['f' => 39, 'deleted' => $this->userRemovesComment($iduser, $post['i'], $post['p'], $post['c'])];
             }
 
 
