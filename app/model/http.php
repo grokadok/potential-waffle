@@ -372,6 +372,37 @@ trait Http
                 $responseContent = ['f' => 39, 'deleted' => $this->userRemovesComment($iduser, $post['i'], $post['p'], $post['c'])];
             }
 
+            /////////////////////////////////////////////////////
+            // AUTOCORRECT TOGGLE (40)
+            /////////////////////////////////////////////////////
+
+            if ($f === 40) {
+                $responseContent = ['f' => 40, 'autocorrect' => $this->userToggleAutocorrect($iduser)];
+            }
+
+            /////////////////////////////////////////////////////
+            // CAPITALIZE TOGGLE (41)
+            /////////////////////////////////////////////////////
+
+            if ($f === 41) {
+                $responseContent = ['f' => 41, 'capitalize' => $this->userToggleCapitalize($iduser)];
+            }
+
+            /////////////////////////////////////////////////////
+            // UPDATE PUBLICATION (42)
+            /////////////////////////////////////////////////////
+
+            if ($f === 42) {
+                $responseContent = ['f' => 42, 'updated' => $this->userUpdatePublication($iduser, $post['i'], $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // UPDATE PUBLICATION (43)
+            /////////////////////////////////////////////////////
+
+            if ($f === 43) {
+                $responseContent = ['f' => 43, 'updated' => $this->userUpdateComment($iduser, $post['i'], $post['c'])];
+            }
 
 
 
@@ -411,7 +442,7 @@ trait Http
 
 
 
-            // var_dump($responseContent);
+            var_dump($responseContent);
             return [
                 "type" => $responseType,
                 "content" => $responseContent,

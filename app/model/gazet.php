@@ -784,6 +784,16 @@ trait Gazet
         ])[0];
     }
 
+    private function getLayoutFromString(string $identifier)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idlayout FROM layout WHERE identifier = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$identifier],
+            'array' => true,
+        ])[0][0];
+    }
+
     private function getPublicationCommentsCount(int $idpublication)
     {
         // TODO: check if it returns the right count of comments
@@ -803,7 +813,7 @@ trait Gazet
         if (empty($commentsId)) return [];
         $commentsId = implode(',', $commentsId);
         $comments = $this->db->request([
-            'query' => 'SELECT idcomment,iduser, content, created FROM comment WHERE idcomment IN (' . $commentsId . ') ORDER BY created DESC;',
+            'query' => 'SELECT idcomment,iduser,content,created FROM comment WHERE idcomment IN (' . $commentsId . ') ORDER BY created DESC;',
         ]);
         foreach ($comments as &$comment) {
             if ($iduser != $comment['iduser'])
@@ -844,12 +854,11 @@ trait Gazet
      */
     private function getPublicationPictures(int $idpublication)
     {
-        $pictures = $this->db->request([
+        return $this->db->request([
             'query' => 'SELECT idobject,place,title FROM publication_has_picture WHERE idpublication = ?;',
             'type' => 'i',
             'content' => [$idpublication],
         ]);
-        return $pictures;
     }
 
     private function getPublicationText(int $idpublication)
@@ -1122,7 +1131,7 @@ trait Gazet
     private function getUserData(int $iduser)
     {
         return $this->db->request([
-            'query' => 'SELECT iduser as id,last_name,first_name,theme,email,phone,avatar FROM user WHERE iduser = ? LIMIT 1;',
+            'query' => 'SELECT iduser as id,last_name,first_name,email,phone,avatar,theme,autocorrect,capitalize FROM user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
@@ -1572,6 +1581,34 @@ trait Gazet
         return ['state' => 0, 'default' => $iduser === $idmember ? $default : false, 'family' => $this->getUserFamilyData($iduser, $idfamily)]; // TODO: code != states for removeMemberFromFamily
     }
 
+    /**
+     * Removes publication and all data linked to it.
+     */
+    private function removePublication(int $idpublication)
+    {
+        // comments
+        $commentsid = $this->getPublicationCommentsId($idpublication);
+        if (!empty($commentsid)) {
+            $commentsid = implode(',', $commentsid);
+            $this->db->request(['query' => "DELETE FROM comment WHERE idcomment IN ($commentsid);"]);
+        }
+        // pictures
+        $pictures = $this->getPublicationPictures($idpublication);
+        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject'], $idpublication);
+        // text
+        $this->removePublicationText($idpublication);
+        // movies
+        // $movies = $this->getPublicationMovies($idpublication);
+        // if (!empty($movies)) foreach ($movies as $movie) $this->removePublicationMovie($movie);
+
+        $this->db->request([
+            'query' => 'DELETE FROM publication WHERE idpublication = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idpublication],
+        ]);
+        return true;
+    }
+
     private function removePublicationMovie(int $idmovie)
     {
         // TODO: test function removePublicationMovie
@@ -1589,55 +1626,25 @@ trait Gazet
         return true;
     }
 
-    private function removePublicationPicture(int $idpicture)
+    private function removePublicationPicture(int $idobject, int $idpublication)
     {
-        // TODO: refactor function removePublicationPicture
-        // delete object
-        // handle remaining pictures' places
-        $this->s3->deleteObject($this->db->request([
-            'query' => 'SELECT object_key FROM picture WHERE idpicture = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idpicture],
-            'array' => true,
-        ])[0][0]);
+        $this->s3->deleteObject($idobject);
         $this->db->request([
-            'query' => 'DELETE FROM picture WHERE idpicture = ? LIMIT 1;',
+            'query' => 'DELETE FROM s3 WHERE idobject = ? LIMIT 1;',
             'type' => 'i',
-            'content' => [$idpicture],
+            'content' => [$idobject],
         ]);
+        $this->reorderPublicationPictures($idpublication);
         return true;
     }
 
-    /**
-     * Removes publication and all data linked to it.
-     */
-    private function removePublication(int $idpublication)
+    private function removePublicationText(int $idpublication)
     {
-        // comments
-        $commentsid = $this->getPublicationCommentsId($idpublication);
-        if (!empty($commentsid)) {
-            $commentsid = implode(',', $commentsid);
-            $this->db->request(['query' => "DELETE FROM comment WHERE idcomment IN ($commentsid);"]);
-        }
-        // pictures
-        $pictures = $this->getPublicationPictures($idpublication);
-        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject']);
-        // texts
         $this->db->request([
-            'query' => 'DELETE FROM text WHERE idpublication = ?;',
+            'query' => 'DELETE FROM text WHERE idpublication = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idpublication],
         ]);
-        // movies
-        // $movies = $this->getPublicationMovies($idpublication);
-        // if (!empty($movies)) foreach ($movies as $movie) $this->removePublicationMovie($movie);
-
-        $this->db->request([
-            'query' => 'DELETE FROM publication WHERE idpublication = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idpublication],
-        ]);
-        return true;
     }
 
     /**
@@ -1814,6 +1821,27 @@ trait Gazet
         ]);
     }
 
+    private function reorderPublicationPictures(int $idpublication)
+    {
+        $pictures = $this->db->request([
+            'query' => 'SELECT idobject FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ]);
+        if (!empty($pictures)) return false;
+        // for each picture, update place
+        $place = 1;
+        foreach ($pictures as $picture) {
+            $this->db->request([
+                'query' => 'UPDATE publication_has_picture SET place = ? WHERE idobject = ? AND idpublication = ?;',
+                'type' => 'iii',
+                'content' => [$place++, $picture[0], $idpublication],
+            ]);
+        }
+        return true;
+    }
+
     /**
      * Add comment to publication, returns updated publication comments.
      * @return array
@@ -1911,15 +1939,6 @@ trait Gazet
         return $nextFamily ?? false;
     }
 
-    // private function getLayout(array $parameters){
-    //     return $this->db->request([
-    //     'query'=>'SELECT idlayout FROM layout WHERE orientation = ? AND quantity = ? AND identifier = ? AND full_page = ? LIMIT 1;',
-    //     'type'=>'',
-    //     'content'=>[$parameters['orientation'],count($parameters['images']),$parameters['identifier'],$parameters['full_page']],
-    //     'array'=>true,
-    //     ])[0][0] ?? false;
-    // }
-
     private function setPublication(int $iduser, int $idfamily, array $parameters)
     {
         // TODO code setPublication
@@ -1937,16 +1956,11 @@ trait Gazet
             $type .= 's';
             $content[] = $parameters['text'];
         }
-        if (!$parameters['journal']) {
+        if ($parameters['layout'][1] !== 'j') {
             $into .= ',idlayout';
             $values .= ',?';
             $type .= 'i';
-            $content[] = $this->db->request([
-                'query' => 'SELECT idlayout FROM layout WHERE identifier = ? LIMIT 1;',
-                'type' => 's',
-                'content' => [$parameters['layout']],
-                'array' => true,
-            ])[0][0];
+            $content[] = $this->getLayoutFromString($parameters['layout']);
         }
 
         $this->db->request([
@@ -1988,30 +2002,45 @@ trait Gazet
         return ['liked' => !$like, 'likes' => $this->getPublicationLikesCount($idpublication)];
     }
 
+    /**
+     * Sets or updates publication picture.
+     */
     private function setPublicationPicture(int $idpublication, array $picture)
     {
-        $this->db->request([
-            'query' => 'INSERT INTO publication_has_picture (idpublication,idobject,place,title) VALUES (?,?,?,?);',
-            'type' => 'iiis',
-            'content' => [$idpublication, $picture['id'], $picture['place'], $picture['title'] ?? ''],
-        ]);
+        empty($this->db->request([
+            'query' => 'SELECT NULL FROM publication_has_picture WHERE idpublication = ? AND idobject = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idpublication, $picture['id']],
+        ])) ?
+            $this->db->request([
+                'query' => 'INSERT INTO publication_has_picture (idpublication,idobject,place,title) VALUES (?,?,?,?);',
+                'type' => 'iiis',
+                'content' => [$idpublication, $picture['id'], $picture['place'], $picture['title'] ?? ''],
+            ]) : $this->db->request([
+                'query' => 'UPDATE publication_has_picture SET place = ?, title = ? WHERE idpublication = ? AND idobject = ? LIMIT 1;',
+                'type' => 'isii',
+                'content' => [$picture['place'], $picture['title'] ?? '', $idpublication, $picture['id']],
+            ]);
         return true;
     }
 
-    private function setPublicationText(int $idpublication, string $text)
+    /**
+     * Sets or updates publication text.
+     * @return bool
+     */
+    private function setPublicationText(int $idpublication, string $content)
     {
-        $idtext = $this->getPublicationText($idpublication);
-        if ($idtext) {
+        $text = $this->getPublicationText($idpublication);
+        $text ?
             $this->db->request([
                 'query' => 'UPDATE text SET content = ? WHERE idpublication = ? LIMIT 1;',
                 'type' => 'si',
-                'content' => [$text, $idpublication],
-            ]);
-        } else
+                'content' => [$content, $idpublication],
+            ]) :
             $this->db->request([
                 'query' => 'INSERT INTO text (idpublication,content) VALUES (?,?);',
                 'type' => 'is',
-                'content' => [$idpublication, $text],
+                'content' => [$idpublication, $content],
             ]);
         return true;
     }
@@ -2134,6 +2163,15 @@ trait Gazet
         ]);
     }
 
+    private function updateComment(int $idcomment, string $content)
+    {
+        $this->db->request([
+            'query' => 'UPDATE comment SET content = ? WHERE idcomment = ? LIMIT 1;',
+            'type' => 'si',
+            'content' => [$content, $idcomment],
+        ]);
+    }
+
     private function updateMember(int $iduser, array $parameters)
     {
         var_dump($parameters);
@@ -2161,9 +2199,65 @@ trait Gazet
         return $response;
     }
 
-    private function updatePublication(int $iduser, int $idpublication, array $parameters)
+    private function updatePublication(int $idpublication, array $parameters)
     {
         // TODO: code updatePublication
+
+        if (!empty($parameters['text']) || !empty($parameters['title']) || !empty($parameters['layout']) || !empty($parameters['private'])) {
+            $set = [];
+            $type = '';
+            $content = [];
+            if (!empty($parameters['text'])) {
+                $set[] = 'description = ?';
+                $type .= 's';
+                if (strlen($parameters['text'] < 500)) {
+                    $this->removePublicationText($idpublication);
+                    $content[] = $parameters['text'];
+                } else {
+                    $content[] = '';
+                    $this->setPublicationText($idpublication, $parameters['text']);
+                }
+            }
+            if (!empty($parameters['title'])) {
+                $set[] = 'title = ?';
+                $type .= 's';
+                $content[] = $parameters['title'];
+            }
+            if (!empty($parameters['layout'])) {
+                $set[] = 'idlayout = ?';
+                $type .= 's';
+                $content[] = $this->getLayoutFromString($parameters['layout']);
+            }
+            if (!empty($parameters['private'])) {
+                $set[] = 'private = ?';
+                $type .= 'i';
+                $content[] = $parameters['private'];
+            }
+            $set = implode(', ', $set);
+            $this->db->request([ // update publication
+                'query' => 'UPDATE publication SET ' . $set . ' WHERE idpublication = ? LIMIT 1;',
+                'type' => $type . 'i',
+                'content' => [...$content, $idpublication],
+            ]);
+        }
+        // images update
+        if (!empty($parameters['images'])) {
+            $pictures = $this->getPublicationPictures($idpublication); // get publication images
+            $ids = [];
+            foreach ($parameters['images'] as $image) {
+                $ids[] = $image['id'];
+                $this->setPublicationPicture($idpublication, $image);
+            }
+            print('ids: ' . implode(', ', $ids) . PHP_EOL);
+            foreach ($pictures as $picture) // remove images not in parameters
+            {
+                print('picture: ' . $picture['idobject'] . PHP_EOL);
+                if (!in_array($picture['idobject'], $ids, false)) {
+                    print('remove: ' . $picture['idobject'] . PHP_EOL);
+                    $this->removePublicationPicture($picture['idobject'], $idpublication);
+                }
+            }
+        }
     }
 
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
@@ -2539,9 +2633,10 @@ trait Gazet
 
     private function userRemovesPublication(int $iduser, int $idfamily, int $idpublication)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) || !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
         $this->removePublication($idpublication);
-        return $this->getFamilyPublications($iduser, $idfamily);
+        // return $this->getFamilyPublications($iduser, $idfamily);
+        return true;
     }
 
     private function userSetCommentLike(int $iduser, int $idfamily, int $idcomment)
@@ -2554,6 +2649,52 @@ trait Gazet
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
         return $this->setPublicationLike($iduser, $idpublication);
+    }
+
+    private function userToggleAutocorrect(int $iduser)
+    {
+        $autocorrect = $this->db->request([
+            'query' => 'SELECT autocorrect FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ])[0][0] === 0 ? 1 : 0;
+        $this->db->request([
+            'query' => 'UPDATE user SET autocorrect = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$autocorrect, $iduser],
+        ]);
+        return $autocorrect;
+    }
+
+    private function userToggleCapitalize(int $iduser)
+    {
+        $capitalize = $this->db->request([
+            'query' => 'SELECT capitalize FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ])[0][0] === 0 ? 1 : 0;
+        $this->db->request([
+            'query' => 'UPDATE user SET capitalize = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$capitalize, $iduser],
+        ]);
+        return $capitalize;
+    }
+
+    private function userUpdateComment(int $iduser, int $idfamily, array $parameters)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $parameters['idcomment'])) return false;
+        $this->updateComment($parameters['idcomment'], $parameters['content']);
+        return true;
+    }
+
+    private function userUpdatePublication(int $iduser, int $idfamily, array $parameters)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $parameters['idpublication'])) return false;
+        $this->updatePublication($parameters['idpublication'], $parameters);
+        return true;
     }
 
     private function userUseFamilyCode(int $iduser, string $code)
