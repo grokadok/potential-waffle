@@ -78,6 +78,21 @@ trait Gazet
     }
 
     /**
+     * Converts string to utf8mb4.
+     * @param string $string
+     * @return string
+     */
+    private function convertToUTF8MB4(string $string)
+    {
+        return $this->db->request([
+            'query' => 'SELECT CONVERT(? USING utf8mb4) COLLATE utf8mb4_0900_ai_ci;',
+            'type' => 's',
+            'content' => [$string],
+            'array' => true,
+        ])[0][0];
+    }
+
+    /**
      * Creates family if name available, sets it as default for user if default not set and returns family data.
      */
     private function createFamily(int $iduser, string $name)
@@ -1850,12 +1865,12 @@ trait Gazet
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
         $this->db->request([
-            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
+            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,CONVERT(? USING utf8mb4));',
             'type' => 'is',
             'content' => [$iduser, $comment],
         ]);
         $idcomment = $this->db->request([
-            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
+            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = CONVERT(? USING utf8mb4) ORDER BY created DESC LIMIT 1;',
             'type' => 'is',
             'content' => [$iduser, $comment],
             'array' => true,
