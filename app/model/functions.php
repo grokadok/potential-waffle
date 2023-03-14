@@ -100,5 +100,5 @@ function strToHTMLEntities(string $string)
  */
 function strToUTF8(string $string)
 {
-    return html_entity_decode($string, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, "UTF-8", FALSE);
+    return html_entity_decode($string, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, "UTF-8");
 }
