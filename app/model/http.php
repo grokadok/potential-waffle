@@ -337,7 +337,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 35) {
-                $responseContent = ['f' => 35, 'added' => $this->setComment($iduser, $post['i'], $post['p'], $post['c'])];
+                $responseContent = ['f' => 35, 'added' => $this->userSetComment($iduser, $post['i'], $post['p'], $post['c'])];
             }
 
             /////////////////////////////////////////////////////

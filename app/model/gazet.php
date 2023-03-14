@@ -78,21 +78,6 @@ trait Gazet
     }
 
     /**
-     * Converts string to utf8mb4.
-     * @param string $string
-     * @return string
-     */
-    private function convertToUTF8MB4(string $string)
-    {
-        return $this->db->request([
-            'query' => 'SELECT CONVERT(? USING utf8mb4) COLLATE utf8mb4_0900_ai_ci;',
-            'type' => 's',
-            'content' => [$string],
-            'array' => true,
-        ])[0][0];
-    }
-
-    /**
      * Creates family if name available, sets it as default for user if default not set and returns family data.
      */
     private function createFamily(int $iduser, string $name)
@@ -832,7 +817,8 @@ trait Gazet
         ]);
         foreach ($comments as &$comment) {
             if ($iduser != $comment['iduser'])
-                $comment['like'] = $this->userLikesComment($iduser, $comment['idcomment']);
+                $comment['content'] = strToUTF8($comment['content']);
+            $comment['like'] = $this->userLikesComment($iduser, $comment['idcomment']);
             $comment['likes'] = $this->getCommentLikesCount($comment['idcomment']);
         }
         return $comments;
@@ -1861,16 +1847,16 @@ trait Gazet
      * Add comment to publication, returns updated publication comments.
      * @return array
      */
-    private function setComment(int $iduser, int $idfamily, int $idpublication, string $comment)
+    private function setComment(int $iduser, int $idpublication, string $comment)
     {
-        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $comment = strToHTMLEntities(trim($comment));
         $this->db->request([
-            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,CONVERT(? USING utf8mb4));',
+            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
             'type' => 'is',
             'content' => [$iduser, $comment],
         ]);
         $idcomment = $this->db->request([
-            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = CONVERT(? USING utf8mb4) ORDER BY created DESC LIMIT 1;',
+            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
             'type' => 'is',
             'content' => [$iduser, $comment],
             'array' => true,
@@ -1880,7 +1866,6 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idpublication, $idcomment],
         ]);
-        return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
     }
 
     private function setCommentLike(int $iduser, int $idcomment)
@@ -2652,6 +2637,13 @@ trait Gazet
         $this->removePublication($idpublication);
         // return $this->getFamilyPublications($iduser, $idfamily);
         return true;
+    }
+
+    private function userSetComment(int $iduser, int $idfamily, int $idpublication, string $comment)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $this->setComment($iduser, $idpublication, $comment);
+        return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
     }
 
     private function userSetCommentLike(int $iduser, int $idfamily, int $idcomment)
