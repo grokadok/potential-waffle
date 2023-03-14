@@ -1849,8 +1849,6 @@ trait Gazet
      */
     private function setComment(int $iduser, int $idpublication, string $comment)
     {
-        $comment =
-            mb_convert_encoding(trim($comment), "UTF-8");
         // $comment = strToHTMLEntities(trim($comment));
         $this->db->request([
             'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
