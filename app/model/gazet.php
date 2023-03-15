@@ -817,7 +817,6 @@ trait Gazet
         ]);
         foreach ($comments as &$comment) {
             if ($iduser != $comment['iduser'])
-                // $comment['content'] = strToUTF8($comment['content']);
                 $comment['like'] = $this->userLikesComment($iduser, $comment['idcomment']);
             $comment['likes'] = $this->getCommentLikesCount($comment['idcomment']);
         }
@@ -1849,7 +1848,6 @@ trait Gazet
      */
     private function setComment(int $iduser, int $idpublication, string $comment)
     {
-        // $comment = strToHTMLEntities(trim($comment));
         $this->db->request([
             'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
             'type' => 'is',

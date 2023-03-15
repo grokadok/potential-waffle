@@ -82,23 +82,3 @@ function gmailNoPeriods(String $string)
     }
     return $emailFinal ?? $string;
 }
-
-/**
- * Converts string to HTML entities
- * @param string $string
- * @return string
- */
-function strToHTMLEntities(string $string)
-{
-    return htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, "UTF-8", FALSE);
-}
-
-/**
- * Converts string to UTF-8
- * @param string $string
- * @return string
- */
-function strToUTF8(string $string)
-{
-    return html_entity_decode($string, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, "UTF-8");
-}
