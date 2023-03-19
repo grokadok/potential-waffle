@@ -2203,11 +2203,11 @@ trait Gazet
         print('@@@ updatePublication' . PHP_EOL);
         var_dump($parameters);
 
-        if (!empty($parameters['text']) || !empty($parameters['title']) || !empty($parameters['layout']) || $parameters['private'] !== null) {
+        if ($parameters['text'] !== null || $parameters['title'] !== null || !empty($parameters['layout']) || $parameters['private'] !== null) {
             $set = [];
             $type = '';
             $content = [];
-            if (!empty($parameters['text'])) {
+            if ($parameters['text'] !== null) {
                 $set[] = 'description = ?';
                 $type .= 's';
                 if (strlen($parameters['text'] < 500)) {
@@ -2218,7 +2218,7 @@ trait Gazet
                     $this->setPublicationText($idpublication, $parameters['text']);
                 }
             }
-            if (!empty($parameters['title'])) {
+            if ($parameters['title'] !== null) {
                 $set[] = 'title = ?';
                 $type .= 's';
                 $content[] = $parameters['title'];
@@ -2229,7 +2229,6 @@ trait Gazet
                 $content[] = $this->getLayoutFromString($parameters['layout']);
             }
             if ($parameters['private'] !== null) {
-                print('@@@ private: ' . $parameters['private'] . PHP_EOL);
                 $set[] = 'private = ?';
                 $type .= 'i';
                 $content[] = $parameters['private'] ? 1 : 0;
