@@ -2226,10 +2226,10 @@ trait Gazet
                 $type .= 's';
                 $content[] = $this->getLayoutFromString($parameters['layout']);
             }
-            if (!empty($parameters['private'])) {
+            if ($parameters['private'] !== null) {
                 $set[] = 'private = ?';
                 $type .= 'i';
-                $content[] = $parameters['private'];
+                $content[] = $parameters['private'] ? 1 : 0;
             }
             $set = implode(', ', $set);
             $this->db->request([ // update publication
