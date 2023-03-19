@@ -2200,8 +2200,10 @@ trait Gazet
     private function updatePublication(int $idpublication, array $parameters)
     {
         // TODO: code updatePublication
+        print('@@@ updatePublication' . PHP_EOL);
+        var_dump($parameters);
 
-        if (!empty($parameters['text']) || !empty($parameters['title']) || !empty($parameters['layout']) || !empty($parameters['private'])) {
+        if (!empty($parameters['text']) || !empty($parameters['title']) || !empty($parameters['layout']) || $parameters['private'] !== null) {
             $set = [];
             $type = '';
             $content = [];
@@ -2227,6 +2229,7 @@ trait Gazet
                 $content[] = $this->getLayoutFromString($parameters['layout']);
             }
             if ($parameters['private'] !== null) {
+                print('@@@ private: ' . $parameters['private'] . PHP_EOL);
                 $set[] = 'private = ?';
                 $type .= 'i';
                 $content[] = $parameters['private'] ? 1 : 0;

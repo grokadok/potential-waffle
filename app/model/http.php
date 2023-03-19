@@ -442,7 +442,7 @@ trait Http
 
 
 
-            var_dump($responseContent);
+            // var_dump($responseContent);
             return [
                 "type" => $responseType,
                 "content" => $responseContent,
