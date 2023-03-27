@@ -96,7 +96,6 @@ trait Http
 
             if ($f === 3) {
                 $responseContent = ['f' => 3, 'families' => $this->getUserFamiliesData($iduser)];
-                // $responseContent = ['f' => 3, 'families' => $this->getUserFamilies($iduser)];
             }
 
             /////////////////////////////////////////////////////
@@ -240,7 +239,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 21) {
-                $responseContent = ['f' => 21, 'applied' => $this->userUseFamilyCode($iduser, $post['c'])];
+                $responseContent = ['f' => 21, 'applied' => $this->userUseFamilyCode($iduser, hex2bin($post['c']))];
             }
 
             /////////////////////////////////////////////////////

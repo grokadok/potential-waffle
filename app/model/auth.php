@@ -71,18 +71,12 @@ trait Auth
             ])[0][0];
 
             if (!empty($options['avatar'])) {
-                // print('@@@ AVATAR:' . PHP_EOL);
-                // var_dump($options['avatar']);
-                // print('@@@ END AVATAR' . PHP_EOL);
-                $file = file_get_contents($options['avatar']);
-                // store img to s3
-                $ext = explode('.', $options['avatar']);
-                $ext = end($ext);
-                $key = $this->s3->getRandomKey() . '.' . $ext ?? 'jpg';
-                $this->s3->put(['body' => $file, 'key' => $key]); // returns id from db ?
-                // store key in s3 table
-                // $idobject = $this->setS3Object($iduser,$key);
-                $this->updateUserAvatar($iduser, $key);
+                $avatar = getFileContentAndExtension($options['avatar']);
+                if ($avatar) {
+                    $key = bin2hex($this->s3->getRandomKey($avatar['extension'] ?? 'jpg')) . '.' . $avatar['extension'] ?? 'jpg';
+                    $this->s3->put(['body' => $avatar['content'], 'key' => $key, 'extension' => $avatar['extension'] ?? 'jpg']);
+                    $this->updateUserAvatar($iduser, $key);
+                }
             }
         }
 

@@ -82,3 +82,104 @@ function gmailNoPeriods(String $string)
     }
     return $emailFinal ?? $string;
 }
+
+function getFileExtensionFromContentType($contentType)
+{
+    $mimeTypes = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'image/webp' => 'webp',
+        // Add any other image formats you want to support
+    ];
+
+    return isset($mimeTypes[$contentType]) ? $mimeTypes[$contentType] : null;
+}
+
+function getFileContentAndExtension($url)
+{
+    // Initialize a cURL session
+    $ch = curl_init($url);
+
+    // Set cURL options
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); // Return the response as a string
+    curl_setopt($ch, CURLOPT_HEADER, true); // Include headers in the response
+
+    // Execute the cURL session and get the response
+    $response = curl_exec($ch);
+
+    // Check for errors
+    if ($response === false) {
+        echo 'Error: ' . curl_error($ch);
+        curl_close($ch);
+        return false;
+    }
+
+    // Get the header size
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+
+    // Close the cURL session
+    curl_close($ch);
+
+    // Split the response into headers and content
+    $headers = substr($response, 0, $headerSize);
+    $content = substr($response, $headerSize);
+
+    // Get the Content-Type header
+    preg_match('/Content-Type:\s*([\w\/]+);?/i', $headers, $contentTypeMatches);
+    $contentType = $contentTypeMatches[1];
+
+    // Get the file extension based on the Content-Type header
+    $fileExtension = getFileExtensionFromContentType($contentType);
+
+    return ['content' => $content, 'extension' => $fileExtension];
+}
+
+/**
+ * Sort an associative array of associative arrays by a parameter in the inner arrays
+ * and include the outer array key as a parameter in the resulting array of inner arrays.
+ *
+ * @param array $arrayA The associative array of associative arrays to be sorted.
+ * @param string $sortParam The parameter in the inner arrays by which to sort.
+ * @param string $outerKeyParam The parameter name to store the outer array key in the inner arrays.
+ * @return array The sorted and modified array of inner arrays.
+ */
+function sortAndIncludeOuterKey(array $arrayA, string $sortParam, string $outerKeyParam): array
+{
+    uasort($arrayA, function ($arrayB1, $arrayB2) use ($sortParam) {
+        return $arrayB1[$sortParam] <=> $arrayB2[$sortParam];
+    });
+
+    $newArrayA = [];
+    foreach ($arrayA as $key => $arrayB) {
+        $arrayB[$outerKeyParam] = $key;
+        $newArrayA[] = $arrayB;
+    }
+
+    return $newArrayA;
+}
+
+/**
+ * Changes the index of an item in the given array.
+ *
+ * @param array $items    The array containing the items.
+ * @param int   $oldIndex The original index of the item to be moved.
+ * @param int   $newIndex The new index where the item should be placed.
+ *
+ * @throws InvalidArgumentException If the provided indices are invalid.
+ */
+function changeItemIndex(array &$items, int $oldIndex, int $newIndex)
+{
+    if ($oldIndex < 0 || $oldIndex >= count($items) || $newIndex < 0 || $newIndex >= count($items)) {
+        throw new InvalidArgumentException("Invalid index values");
+    }
+
+    // Store the item in a temporary variable
+    $item = $items[$oldIndex];
+
+    // Remove the item from the original index
+    array_splice($items, $oldIndex, 1);
+
+    // Insert the item at the new index
+    array_splice($items, $newIndex, 0, $item);
+}

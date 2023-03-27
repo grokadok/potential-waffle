@@ -2,8 +2,6 @@
 
 namespace bopdev;
 
-use PDO;
-
 trait Gazet
 {
     /**
@@ -45,11 +43,10 @@ trait Gazet
         $s3Keys = $this->s3->listObjects()['Contents'];
         foreach ($s3Keys as &$key) $key = $key['Key'];
         $dbKeys = $this->db->request([
-            'query' => 'SELECT name FROM s3;',
+            'query' => 'SELECT name,ext FROM s3;',
             'array' => true,
         ]);
-        foreach ($dbKeys as &$key) $key = $key[0];
-
+        foreach ($dbKeys as &$key) $key = bin2hex($key[0]) . '.' . $key[1];
 
         $s3Diff = array_diff($s3Keys, $dbKeys);
         if (!empty($s3Diff)) {
@@ -82,8 +79,8 @@ trait Gazet
      */
     private function createFamily(int $iduser, string $name)
     {
-        $randomCode = bin2hex(random_bytes(5));
-        while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = bin2hex(random_bytes(5));
+        $randomCode = random_bytes(5);
+        while (!$this->checkFamilyCodeAvailability($randomCode)) $randomCode = random_bytes(5);
         // create family
         $this->db->request([
             'query' => 'INSERT INTO family (name,admin,code) VALUES (?,?,?);',
@@ -159,7 +156,7 @@ trait Gazet
         $values = '';
         $type = '';
         $content = [];
-        if ($recipient['self']) {
+        if (!empty($recipient['self'])) {
             $into = ',iduser';
             $values = ',?';
             $type = 'i';
@@ -503,6 +500,118 @@ trait Gazet
         return true;
     }
 
+    private function getGazetteTypeData(int $idtype)
+    {
+        return $this->db->request([
+            'query' => 'SELECT pages FROM gazette_type WHERE idgazette_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idtype],
+        ])[0][0];
+    }
+
+    private function getGazetteData(int $idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idfamily,type,print_date FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ])[0];
+    }
+
+    private function getLayoutFullPage(int $idlayout)
+    {
+        return $this->db->request([
+            'query' => 'SELECT full_page FROM layout WHERE idlayout = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idlayout],
+        ])[0];
+    }
+
+    private function populateGazette(int $idgazette)
+    {
+
+        // get data of gazette (month,type)
+        $gazette = $this->getGazetteData($idgazette);
+        $pages = $this->getGazetteTypeData($gazette['type']);
+
+        $publications = [];
+        $layouts = [];
+        $recipients = [];
+
+        $publicationPlaces = ($pages - 2) * 2;
+
+        // get publications related to month (id, fullpage)
+        $publicationsData = $this->db->request([
+            'query' => 'SELECT idpublication,idlayout
+            FROM publication
+            WHERE idfamily = ?
+            AND created >= DATE_SUB(?,INTERVAL 1 MONTH)
+            AND created <= ?
+            AND private = 0;',
+            'type' => 'iss',
+            'content' => [$gazette['idfamily'], $gazette['print_date'], $gazette['print_date']],
+        ]);
+        // for each publication, check if it's recipient selective or not and get layout
+        foreach ($publicationsData as  $publication) {
+            $id = (string)$publication['idpublication'];
+
+            // handle layout
+            if (!array_key_exists((string)$publication['idlayout'], $layouts))
+                $layouts[$publication['idlayout']] = $this->getLayoutFullPage($publication['idlayout'])['full_page'];
+            $publications[$id]['fullpage'] = $layouts[$publication['idlayout']];
+
+            // get likes count
+            $publications[$id]['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
+
+            // get comments count
+            $publications[$id]['comments'] = $this->getPublicationCommentsCount($publication['idpublication']);
+
+            // handle recipient specificity
+            $recipientSpecific = $this->db->request([
+                'query' => 'SELECT idrecipient FROM recipient_has_publication WHERE idpublication = ?;',
+                'type' => 'i',
+                'content' => [$publication['idpublication']],
+                'array' => true,
+            ]);
+            if (!empty($recipientSpecific)) {
+                foreach ($recipientSpecific as $recipient) $recipients[(string)$recipient[0]] = $publication['idpublication'];
+                $publications[$id]['recipientSpecific'] = true;
+            }
+        }
+
+        // get publication with most likes > most comments > earliest created for cover
+
+
+        // create pages according to gazette type
+        for ($i = 0; $i < $pages; $i++) {
+            $this->db->request([
+                'query' => 'INSERT INTO gazette_page (idgazette,page) VALUES (?,?);',
+                'type' => 'ii',
+                'content' => [$idgazette, $i],
+            ]);
+        }
+
+        // if not enough publications
+        // fill with unused games (get games where id not in recipient_has_game limit required number of games), according to games height
+
+        // for each recipient, find room for specific publications (replace games, or publications with least likes if needed)
+    }
+
+    /**
+     * Update gazette according to new publications and prior user modifications.
+     */
+    private function refreshGazette(int $idgazette)
+    {
+        // 
+    }
+
+    /**
+     * Apply user modifications to gazette prior to printing.
+     */
+    private function updateGazette(int $idgazette, array $parameters)
+    {
+    }
+
     /**
      * Returns all publications id for given family, false if none.
      * @return array|false
@@ -604,6 +713,16 @@ trait Gazet
             'content' => [$idfamily],
             'array' => true
         ])[0][0];
+    }
+
+    private function getFamilyGazettes(int $idfamily)
+    {
+        $gazettes = $this->db->request([
+            'query' => 'SELECT idgazette,print_date,printed FROM gazette WHERE idfamily = ?;',
+            'type' => 'i',
+            'content' => [$idfamily],
+        ]);
+        return $gazettes;
     }
 
     private function getFamilyInvitations(int $idfamily)
@@ -1005,12 +1124,13 @@ trait Gazet
      */
     private function getS3ObjectKeyFromId(int $idobject)
     {
-        return $this->db->request([
-            'query' => 'SELECT name FROM s3 WHERE idobject = ? LIMIT 1;',
+        $object = $this->db->request([
+            'query' => 'SELECT name,ext FROM s3 WHERE idobject = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idobject],
             'array' => true,
-        ])[0][0] ?? false;
+        ])[0];
+        return bin2hex($object[0]) . '.' . $object[1];
     }
 
     /**
@@ -1210,7 +1330,7 @@ trait Gazet
         foreach (array_keys($families) as $key) {
             $families[$key]['id'] = $key;
             $families[$key]['invitation'] = $families[$key]['invitation'] ?? false;
-            $families[$key]['code'] = $this->getFamilyCode($key);
+            $families[$key]['code'] = bin2hex($this->getFamilyCode($key));
             $families[$key]['admin'] = $families[$key]['admin'] ?? false;
             $families[$key]['member'] = $families[$key]['member'] ?? false;
             $families[$key]['name'] = $families[$key]['name'] ?? $this->getAvailableFamilyName($iduser, $key, $this->getFamilyName($key));
@@ -1233,6 +1353,7 @@ trait Gazet
             if (empty($family['invitation']) && empty($family['request'])) {
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
                 $family['members'] = $this->getFamilyMembersData($family['id']); // get members
+                $family['gazettes'] = $this->getFamilyGazettes($family['id']); // get gazettes
                 if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
                     $family['invitations'] = $this->getFamilyInvitations($family['id']);
                     $family['requests'] = $this->getFamilyRequests($family['id']);
@@ -1251,7 +1372,7 @@ trait Gazet
         ) return false;
         $family = [
             'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
-            'code' => $this->getFamilyCode($idfamily),
+            'code' => bin2hex($this->getFamilyCode($idfamily)),
             'default' => $this->familyIsDefaultForUser($iduser, $idfamily),
             'id' => $idfamily,
             'member' => $this->userIsMemberOfFamily($iduser, $idfamily),
@@ -1611,13 +1732,14 @@ trait Gazet
 
     private function removePublicationMovie(int $idmovie)
     {
-        // TODO: test function removePublicationMovie
-        $this->s3->deleteObject($this->db->request([
-            'query' => 'SELECT object_key FROM movie WHERE idmovie = ? LIMIT 1;',
+        // TODO: should be tested if this usage is approved
+        $idobject = $this->db->request([
+            'query' => 'SELECT idobject FROM movie WHERE idmovie = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idmovie],
             'array' => true,
-        ])[0][0]);
+        ])[0][0];
+        $this->s3->deleteObject($this->getS3ObjectKeyFromId($idobject));
         $this->db->request([
             'query' => 'DELETE FROM movie WHERE idmovie = ? LIMIT 1;',
             'type' => 'i',
@@ -1628,7 +1750,7 @@ trait Gazet
 
     private function removePublicationPicture(int $idobject, int $idpublication)
     {
-        $this->s3->deleteObject($idobject);
+        $this->s3->deleteObject($this->getS3ObjectKeyFromId($idobject));
         $this->db->request([
             'query' => 'DELETE FROM s3 WHERE idobject = ? LIMIT 1;',
             'type' => 'i',
@@ -1902,6 +2024,57 @@ trait Gazet
     }
 
     /**
+     * Returns subscriptions data for a given family.
+     */
+    private function getFamilySubscriptions(int $idfamily)
+    {
+        // get family recipients
+        $recipients = $this->getFamilyRecipients($idfamily);
+        if (empty($recipients)) return false;
+        $recipients = implode(',', $recipients);
+        // get recipients subscriptions
+        return $this->db->request([
+            'query' => 'SELECT idsubscription,idrecipient,idsubscription_type FROM subscription WHERE idrecipient IN (' . $recipients . ');',
+        ]);
+    }
+
+    /**
+     * Fill gazette with publications
+     */
+    private function setGazette($idgazette)
+    {
+    }
+
+    /**
+     * Create gazette(s) for family.
+     */
+    private function setGazettes(int $idfamily, string $date)
+    {
+        // get family active subscriptions
+        $subscriptions = $this->getFamilySubscriptions($idfamily);
+        $types = [];
+        // get active subscriptions gazette types, else default type
+        if (!empty($subscriptions)) {
+            foreach ($subscriptions as $subscription) {
+                if (!in_array($subscription['idsubscription_type'], $types)) array_push($types, $subscription['idsubscription_type']);
+            }
+        } else $types = [1];
+        foreach ($types as $type) {
+            // if no gazette of this type, create one
+            $gazette = $this->db->request([
+                'query' => 'SELECT idgazette FROM gazette WHERE ? < print_date AND ? >= DATE_SUB(print_date,INTERVAL 1 MONTH) AND type = ? LIMIT 1;',
+                'type' => 'ssi',
+                'content' => [$date, $date, $type],
+                'array' => true,
+            ])[0][0] ?? false;
+        }
+
+        // fill gazette(s) with publications of the running month if any
+
+        // let admin/referent know if gazette overflows
+    }
+
+    /**
      * Sets another family as default for user and returns its id.
      * @return int|null
      */
@@ -2072,16 +2245,16 @@ trait Gazet
      * Set object in db and returns its ID.
      * @return int Object's ID.
      */
-    private function setS3Object(int $iduser, string $key)
+    private function setS3Object(int $iduser, array $object)
     {
-        $idobject = $this->getS3ObjectIdFromKey($key);
+        $idobject = $this->getS3ObjectIdFromKey($object['key']);
         if ($idobject) return $idobject;
         $this->db->request([
-            'query' => 'INSERT INTO s3 (name,owner) VALUES (?,?);',
-            'type' => 'si',
-            'content' => [$key, $iduser],
+            'query' => 'INSERT INTO s3 (name,ext,owner) VALUES (?,?,?);',
+            'type' => 'ssi',
+            'content' => [$object['binKey'], $object['ext'], $iduser],
         ]);
-        return $idobject = $this->getS3ObjectIdFromKey($key);
+        return $idobject = $this->getS3ObjectIdFromKey($object['binKey']);
     }
 
     // private function setUserAvatar(int $iduser, string $key){
@@ -2172,6 +2345,7 @@ trait Gazet
 
     private function updateMember(int $iduser, array $parameters)
     {
+        // TODO: finish updateMember
         var_dump($parameters);
         $response = [];
         // if user's data modifed
@@ -2199,9 +2373,8 @@ trait Gazet
 
     private function updatePublication(int $idpublication, array $parameters)
     {
-        // TODO: code updatePublication
-        print('@@@ updatePublication' . PHP_EOL);
-        var_dump($parameters);
+        // print('@@@ updatePublication' . PHP_EOL);
+        // var_dump($parameters);
 
         if ($parameters['text'] !== null || $parameters['title'] !== null || !empty($parameters['layout']) || $parameters['private'] !== null) {
             $set = [];
@@ -2356,10 +2529,10 @@ trait Gazet
     private function updateRecipientAvatar(int $iduser, int $idrecipient, string $key)
     {
         if (!$this->userIsReferent($iduser, $idrecipient)) return false;
-        $newKey = $this->s3->move($key);
+        $newObject = $this->s3->move($key);
         $idobject = $this->getRecipientAvatar($idrecipient);
-        if ($idobject) return $this->updateS3Object($idobject, $newKey);
-        $idobject = $this->setS3Object($iduser, $newKey);
+        if ($idobject) return $this->updateS3Object($idobject, $newObject);
+        $idobject = $this->setS3Object($iduser, $newObject);
         $this->db->request([
             'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
             'type' => 'ii',
@@ -2368,13 +2541,13 @@ trait Gazet
         return $idobject;
     }
 
-    private function updateS3Object(int $idobject, string $key)
+    private function updateS3Object(int $idobject, array $object)
     {
         $this->removeS3ObjectFromKey($this->getS3ObjectKeyFromId($idobject));
         $this->db->request([
-            'query' => 'UPDATE s3 SET name = ? WHERE idobject = ? LIMIT 1;',
-            'type' => 'si',
-            'content' => [$key, $idobject],
+            'query' => 'UPDATE s3 SET name = ?,ext = ? WHERE idobject = ? LIMIT 1;',
+            'type' => 'ssi',
+            'content' => [$object['binKey'], $object['ext'], $idobject],
         ]);
         return $idobject;
     }
@@ -2411,10 +2584,10 @@ trait Gazet
 
     private function updateUserAvatar(int $iduser, string $key)
     {
-        $newKey = $this->s3->move($key);
+        $newObject = $this->s3->move($key);
         $idobject = $this->getUserAvatar($iduser);
-        if ($idobject) return $this->updateS3Object($idobject, $newKey);
-        $idobject = $this->setS3Object($iduser, $newKey);
+        if ($idobject) return $this->updateS3Object($idobject, $newObject);
+        $idobject = $this->setS3Object($iduser, $newObject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
             'type' => 'ii',
@@ -2425,8 +2598,8 @@ trait Gazet
 
     private function storeS3Object(int $iduser, string $key)
     {
-        $newKey = $this->s3->move($key);
-        return $this->setS3Object($iduser, $newKey);
+        $newObject = $this->s3->move($key);
+        return $this->setS3Object($iduser, $newObject);
     }
 
     private function updateUserEmail(int $iduser, string $email)

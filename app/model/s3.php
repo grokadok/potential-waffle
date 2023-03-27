@@ -43,11 +43,13 @@ class S3Client
     public function copy(string $fromKey, string $destKey = null, string $fromBucket = null, string $destBucket = null)
     {
         try {
+            $extension = explode('.', $fromKey);
+            $extension = end($extension);
             return $this->client->copy(
                 $fromBucket ?? $this->bucket,
                 $fromKey,
                 $destBucket ?? $this->bucket,
-                $destKey ?? $this->getRandomKey($destBucket ?? $this->bucket)
+                $destKey ?? bin2hex($this->getRandomKey($extension, $destBucket ?? $this->bucket)) . '.' . $extension,
             );
         } catch (AwsException $e) {
             return print($e->getMessage() . PHP_EOL);
@@ -139,11 +141,25 @@ class S3Client
         }
     }
 
-    public function getRandomKey(string $bucket = null)
+    public function getEtag(string $key, string $bucket = null)
     {
-        $newKey = bin2hex(random_bytes(24));
-        while ($this->objectExist($newKey, $bucket ?? $this->bucket))
-            $newKey = bin2hex(random_bytes(24));
+        try {
+            return str_replace('"', '', $this->client->headObject([
+                'Bucket' => $bucket ?? $this->bucket,
+                'Key'    => $key,
+            ])['ETag']);
+        } catch (S3Exception $e) {
+            print($e->getMessage() . PHP_EOL);
+        }
+    }
+
+    public function getRandomKey(string $ext = null, string $bucket = null)
+    {
+        $newKey = random_bytes(8);
+        // $newKey = bin2hex(random_bytes(24));
+        while ($this->objectExist(empty($ext) ? bin2hex($newKey) : bin2hex($newKey) . '.' . $ext, $bucket ?? $this->bucket))
+            $newKey = random_bytes(8);
+        // $newKey = bin2hex(random_bytes(24));
         return $newKey;
     }
 
@@ -168,7 +184,13 @@ class S3Client
         try {
             $extension = explode('.', $fromKey);
             $extension = end($extension);
-            $newKey = $destKey ?? $this->getRandomKey($destBucket ?? $this->bucket) . '.' . $extension;
+
+            if (!empty($destKey)) {
+                $binKey = explode('.', $destKey);
+                $binKey = hex2bin($binKey[0]);
+            } else $binKey = $this->getRandomKey($extension, $destBucket ?? $this->bucket);
+
+            $newKey = $destKey ?? bin2hex($binKey) . '.' . $extension;
             $this->client->copy(
                 $fromBucket ?? $this->bucket,
                 $fromKey,
@@ -176,7 +198,7 @@ class S3Client
                 $newKey
             );
             $this->deleteObject($fromKey);
-            return $newKey;
+            return ['binKey' => $binKey, 'key' => $newKey, 'ext' => $extension];
         } catch (AwsException $e) {
             return print($e->getMessage() . PHP_EOL);
         }
@@ -215,7 +237,7 @@ class S3Client
     public function presignedUriPut(array $options)
     {
         try {
-            $key = $options['key'] ?? ($this->getRandomKey($options['bucket'] ?? $this->bucket) . $options['ext'] ?? '');
+            $key = $options['key'] ?? bin2hex($this->getRandomKey($options['ext'], $options['bucket'] ?? $this->bucket)) . '.' . $options['ext'];
             $cmd = $this->client->getCommand('PutObject', [
                 'Bucket' => $options['bucket'] ?? $this->bucket,
                 'Key' => $key,
@@ -234,7 +256,7 @@ class S3Client
             return $this->client->putObject([
                 'Bucket' => $options['bucket'] ?? $this->bucket,
                 'Body' => $options['body'] ?? null,
-                'Key' => $options['key'] ?? $this->getRandomKey($options['bucket'] ?? $this->bucket),
+                'Key' => $options['key'] ?? (bin2hex($this->getRandomKey($options['extension'], $options['bucket'] ?? $this->bucket)) . '.' . $options['extension']),
                 'SourceFile' => $options['path'] ?? null,
                 // 'ContentLength' => $options['length'] ?? null,
             ]);
