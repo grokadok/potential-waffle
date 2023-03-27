@@ -2,6 +2,8 @@
 
 namespace bopdev;
 
+use DateTime;
+
 trait Gazet
 {
     /**
@@ -500,118 +502,6 @@ trait Gazet
         return true;
     }
 
-    private function getGazetteTypeData(int $idtype)
-    {
-        return $this->db->request([
-            'query' => 'SELECT pages FROM gazette_type WHERE idgazette_type = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idtype],
-        ])[0][0];
-    }
-
-    private function getGazetteData(int $idgazette)
-    {
-        return $this->db->request([
-            'query' => 'SELECT idfamily,type,print_date FROM gazette WHERE idgazette = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idgazette],
-        ])[0];
-    }
-
-    private function getLayoutFullPage(int $idlayout)
-    {
-        return $this->db->request([
-            'query' => 'SELECT full_page FROM layout WHERE idlayout = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idlayout],
-        ])[0];
-    }
-
-    private function populateGazette(int $idgazette)
-    {
-
-        // get data of gazette (month,type)
-        $gazette = $this->getGazetteData($idgazette);
-        $pages = $this->getGazetteTypeData($gazette['type']);
-
-        $publications = [];
-        $layouts = [];
-        $recipients = [];
-
-        $publicationPlaces = ($pages - 2) * 2;
-
-        // get publications related to month (id, fullpage)
-        $publicationsData = $this->db->request([
-            'query' => 'SELECT idpublication,idlayout
-            FROM publication
-            WHERE idfamily = ?
-            AND created >= DATE_SUB(?,INTERVAL 1 MONTH)
-            AND created <= ?
-            AND private = 0;',
-            'type' => 'iss',
-            'content' => [$gazette['idfamily'], $gazette['print_date'], $gazette['print_date']],
-        ]);
-        // for each publication, check if it's recipient selective or not and get layout
-        foreach ($publicationsData as  $publication) {
-            $id = (string)$publication['idpublication'];
-
-            // handle layout
-            if (!array_key_exists((string)$publication['idlayout'], $layouts))
-                $layouts[$publication['idlayout']] = $this->getLayoutFullPage($publication['idlayout'])['full_page'];
-            $publications[$id]['fullpage'] = $layouts[$publication['idlayout']];
-
-            // get likes count
-            $publications[$id]['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
-
-            // get comments count
-            $publications[$id]['comments'] = $this->getPublicationCommentsCount($publication['idpublication']);
-
-            // handle recipient specificity
-            $recipientSpecific = $this->db->request([
-                'query' => 'SELECT idrecipient FROM recipient_has_publication WHERE idpublication = ?;',
-                'type' => 'i',
-                'content' => [$publication['idpublication']],
-                'array' => true,
-            ]);
-            if (!empty($recipientSpecific)) {
-                foreach ($recipientSpecific as $recipient) $recipients[(string)$recipient[0]] = $publication['idpublication'];
-                $publications[$id]['recipientSpecific'] = true;
-            }
-        }
-
-        // get publication with most likes > most comments > earliest created for cover
-
-
-        // create pages according to gazette type
-        for ($i = 0; $i < $pages; $i++) {
-            $this->db->request([
-                'query' => 'INSERT INTO gazette_page (idgazette,page) VALUES (?,?);',
-                'type' => 'ii',
-                'content' => [$idgazette, $i],
-            ]);
-        }
-
-        // if not enough publications
-        // fill with unused games (get games where id not in recipient_has_game limit required number of games), according to games height
-
-        // for each recipient, find room for specific publications (replace games, or publications with least likes if needed)
-    }
-
-    /**
-     * Update gazette according to new publications and prior user modifications.
-     */
-    private function refreshGazette(int $idgazette)
-    {
-        // 
-    }
-
-    /**
-     * Apply user modifications to gazette prior to printing.
-     */
-    private function updateGazette(int $idgazette, array $parameters)
-    {
-    }
-
     /**
      * Returns all publications id for given family, false if none.
      * @return array|false
@@ -870,6 +760,21 @@ trait Gazet
         return $requests;
     }
 
+    /**
+     * Returns subscriptions data for a given family.
+     */
+    private function getFamilySubscriptions(int $idfamily)
+    {
+        // get family recipients
+        $recipients = $this->getFamilyRecipients($idfamily);
+        if (empty($recipients)) return false;
+        $recipients = implode(',', $recipients);
+        // get recipients subscriptions
+        return $this->db->request([
+            'query' => 'SELECT idsubscription,idrecipient,idsubscription_type FROM subscription WHERE idrecipient IN (' . $recipients . ');',
+        ]);
+    }
+
     private function getFamilyWithCode(string $code)
     {
         return $this->db->request([
@@ -878,6 +783,80 @@ trait Gazet
             'content' => [$code],
             'array' => true,
         ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns true if full page.
+     * @param int $idgame
+     */
+    private function getGameSize(int $idgame)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM game WHERE idgame = ? AND full_page = 1;',
+            'type' => 'i',
+            'content' => [$idgame],
+        ]));
+    }
+
+    private function getGazetteData(int $idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idfamily,type,print_date FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ])[0];
+    }
+
+    /**
+     * Returns gazette's games' ids.
+     * @return int[]
+     */
+    private function getGazetteGames(int $idgazette)
+    {
+        $games = $this->db->request([
+            'query' => 'SELECT idgame FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ]);
+        if (empty($games)) return false;
+        foreach ($games as &$game) $game = $game[0];
+        return $games;
+    }
+
+    private function getGazetteModifications(int $idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT page_num,place,idrecipient,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NOT NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+    }
+
+    private function getGazettePages(int $idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT page_num,place,idrecipient,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+    }
+
+    /**
+     * Returns gazette's publications' ids.
+     * @return int[]
+     */
+    private function getGazettePublications(int $idgazette)
+    {
+        $publications = $this->db->request([
+            'query' => 'SELECT idpublication FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ]);
+        if (empty($publications)) return false;
+        foreach ($publications as &$publication) $publication = $publication[0];
+        return $publications;
     }
 
     /**
@@ -892,6 +871,32 @@ trait Gazet
             'content' => [$idgazette],
             'array' => true,
         ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns gazette's songs' ids.
+     * @return int[]
+     */
+    private function getGazetteSongs(int $idgazette)
+    {
+        $songs = $this->db->request([
+            'query' => 'SELECT idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ]);
+        if (empty($songs)) return false;
+        foreach ($songs as &$song) $song = $song[0];
+        return $songs;
+    }
+
+    private function getGazetteTypeData(int $idtype)
+    {
+        return $this->db->request([
+            'query' => 'SELECT pages FROM gazette_type WHERE idgazette_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idtype],
+        ])[0][0];
     }
 
     private function getLayout(int $idlayout)
@@ -911,6 +916,30 @@ trait Gazet
             'content' => [$identifier],
             'array' => true,
         ])[0][0];
+    }
+
+    private function getLayoutFullPage(int $idlayout)
+    {
+        return $this->db->request([
+            'query' => 'SELECT full_page FROM layout WHERE idlayout = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idlayout],
+        ])[0][0] === 1;
+    }
+
+    /**
+     * Returns print date for a given date.
+     * @param string $date
+     * @return string Print date in Y-m-d format.
+     */
+    private function getPrintDate($date)
+    {
+        $day = (int) date('d', strtotime($date));
+        $date = new DateTime($date);
+        if ($day < 28) {
+            $date->modify('first day of this month')->modify('+27 days');
+        } else $date->modify('first day of next month')->modify('+27 days');
+        return $date->format('Y-m-d');
     }
 
     private function getPublicationCommentsCount(int $idpublication)
@@ -978,6 +1007,20 @@ trait Gazet
             'type' => 'i',
             'content' => [$idpublication],
         ]);
+    }
+
+    /**
+     * Returns true if fullpage.
+     * @param int $idlayout
+     * @return bool
+     */
+    private function getPublicationSize(int $idpublication)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM publication WHERE idpublication = ? AND full_page = 1;',
+            'type' => 'i',
+            'content' => [$idpublication],
+        ]));
     }
 
     private function getPublicationText(int $idpublication)
@@ -1527,22 +1570,6 @@ trait Gazet
         return true;
     }
 
-    // private function removeAvatar(string $key)
-    // {
-    //     if (!empty($this->db->request([
-    //         'query' => 'SELECT NULL FROM user WHERE avatar = ? LIMIT 1;',
-    //         'type' => 's',
-    //         'content' => [$key],
-    //     ]))) return false;
-    //     if (!empty($this->db->request([
-    //         'query' => 'SELECT NULL FROM recipient WHERE avatar = ? LIMIT 1;',
-    //         'type' => 's',
-    //         'content' => [$key],
-    //     ]))) return false;
-    //     $this->s3->deleteObject($key);
-    //     return true;
-    // }
-
     /**
      * Removes a given comment.
      */
@@ -2024,32 +2051,301 @@ trait Gazet
     }
 
     /**
-     * Returns subscriptions data for a given family.
+     * Check if recipient has modifications for gazette
+     * @param int $idgazette
+     * @param int $idrecipient
+     * 
+     * @return bool
      */
-    private function getFamilySubscriptions(int $idfamily)
+    private function recipientHasGazetteMods(int $idgazette, int $idrecipient)
     {
-        // get family recipients
-        $recipients = $this->getFamilyRecipients($idfamily);
-        if (empty($recipients)) return false;
-        $recipients = implode(',', $recipients);
-        // get recipients subscriptions
-        return $this->db->request([
-            'query' => 'SELECT idsubscription,idrecipient,idsubscription_type FROM subscription WHERE idrecipient IN (' . $recipients . ');',
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM gazette_page WHERE idgazette = ? AND idrecipient = ?;',
+            'type' => 'ii',
+            'content' => [$idgazette, $idrecipient],
+        ]));
+    }
+
+    /**
+     * Returns recipient gazette pages for a given gazette.
+     * @param int $idgazette
+     * @param int $idrecipient
+     * 
+     * @return array gazette pages including modifications if any
+     */
+    private function getRecipientGazettePages(int $idgazette, int $idrecipient)
+    {
+        if (!$this->recipientHasGazetteMods($idgazette, $idrecipient)) return $this->getGazettePages($idgazette);
+        // get recipient modified gazette pages
+        $recipientMods = $this->db->request([
+            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient = ?;',
+            'type' => 'ii',
+            'content' => [$idgazette, $idrecipient],
+        ]);
+        $pages = [];
+        $modifications = '';
+        foreach ($recipientMods as $modification) {
+            $pages[$modification['page_num']][$modification['place']] = ['idpublication' => $modification['idpublication'], 'idgame' => $modification['idgame'], 'idsong' => $modification['idsong']];
+            $modifications .= ' AND NOT (page_num = ' . $modification['page_num'] . ' AND place = ' . $modification['place'] . ')';
+        }
+        foreach ($this->db->request([
+            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL' . $modifications . ';',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]) as $page) {
+            $pages[$page['page_num']][$page['place']] = ['idpublication' => $page['idpublication'], 'idgame' => $page['idgame'], 'idsong' => $page['idsong']];
+        }
+        return $pages;
+    }
+
+    /**
+     * Checks and clears given gazette from referent modifications duplicates.
+     * @param int $idgazette
+     */
+    private function checkGazetteModifications(int $idgazette)
+    {
+        // get gazette modifications
+        $modifications =  $this->getGazetteModifications($idgazette);
+        if (empty($modifications)) return;
+
+        $recipients = [];
+        foreach ($modifications as $modification)
+            $recipients[$modification['idrecipient']][$modification['page_num']][$modification['place']] = ['idpublication' => $modification['idpublication'], 'idgame' => $modification['idgame'], 'idsong' => $modification['idsong']];
+        $gazette = $this->getGazettePages($idgazette);
+
+        // TODO: check gazette mods should prioritize new publications to game modifications
+
+        // for each modification, check if it's a duplicate
+        foreach ($modifications as $modification) {
+            if (!empty($modification['idpublication'])) {
+                // check if publication is already in gazette
+                $duplicate = array_filter($gazette, function ($page) use ($modification) {
+                    return $page['idpublication'] === $modification['idpublication'] || $page['idgame'] === $modification['idgame'] || $page['idsong'] === $modification['idsong'];
+                });
+                // if so, check it recipient has a modification removing the duplicate
+                if (!empty($duplicate) && ($duplicate['idpublication'] !== null && !empty(array_filter($modifications, function ($mod) use ($duplicate) {
+                        return $mod['page_num'] === $duplicate['page_num'] && ($this->getPublicationSize($mod['idpublication']) || ($mod['place'] === $duplicate['place']));
+                    })) || ($duplicate['idgame'] !== null && !empty(array_filter($modifications, function ($mod) use ($duplicate) {
+                                return $mod['page_num'] === $duplicate['page_num'] && ($this->getGameSize($mod['idgame']) || ($mod['place'] === $duplicate['place']));
+                            }))
+                    ) || ($duplicate['idsong'] !== null && !empty(array_filter($modifications, function ($mod) use ($duplicate) {
+                                return $mod['page_num'] === $duplicate['page_num'];
+                            }))
+                    ))) {
+                    // if not, remove the modification
+                    $this->removeGazetteModification($idgazette, $modification['idrecipient'], $modification['page_num'], $modification['place']);
+                }
+            }
+        }
+    }
+
+    private function removeGazetteModification(int $idgazette, int $idrecipient, int $page_num, int $place)
+    {
+        $this->db->request([
+            'query' => 'DELETE FROM gazette_page WHERE idgazette = ? AND idrecipient = ? AND page_num = ? AND place = ? LIMIT 1;',
+            'type' => 'iiii',
+            'content' => [$idgazette, $idrecipient, $page_num, $place],
         ]);
     }
 
     /**
-     * Fill gazette with publications
+     * Fills given gazette with games for a given recipient.
+     * @param int $idgazette
+     * @param int $idrecipient
      */
-    private function setGazette($idgazette)
+    private function fillGazetteWithGames(int $idgazette, int $idrecipient)
     {
+        // get gazette pages according to type
+        $pageCount = $this->getGazetteTypeData($this->getGazetteType($idgazette));
+        // get last page publication
+        $lastPage = $this->db->request([
+            'query' => 'SELECT MAX(page_num) as page,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND (idrecipient IS NULL OR idrecipient = ?) LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idgazette, $idrecipient],
+        ]);
+        $lastPageFull = $lastPage['place'] === 2 || (
+            ($lastPage['idpublication'] !== null && $this->getPublicationSize($lastPage['idpublication']) ||
+                ($lastPage['idgame'] !== null && $this->getGameSize($lastPage['idgame'])) ||
+                $lastPage['idsong'] !== null
+            ));
+
+        if (empty($lastPage) || $lastPage['page'] === $pageCount && $lastPageFull) return false;
+        // count empty half pages
+        $emptyHalfPages = ($pageCount - $lastPage['page']) * 2 + ($lastPageFull ? 0 : 1);
+
+        // fill with games according to recipient's excluded game types and already printed games (common games)
+        $games = $this->getRecipientFillGames($idrecipient, $emptyHalfPages);
+        // prepare query to insert games
+        $nextPage = $lastPage['page'] + $lastPageFull ? 1 : 0;
+        $nextPlace = $lastPageFull ? 1 : 2;
+        $gamesQuery = [];
+        while ($nextPage <= $pageCount) {
+            if (empty($games)) break;
+            if ($nextPlace === 2) {
+                // insert next half page game
+                $gameIndex = 0;
+                while ($games[$gameIndex]['full_size'] === 1) $gameIndex++;
+                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $games[$gameIndex]['idgame'] . ')';
+                // pop game from game array
+                array_splice($games, $gameIndex, 1);
+                $nextPlace = 1;
+                $nextPage++;
+            } else {
+                // insert next game
+                $game = array_shift($games);
+                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $game['idgame'] . ')';
+                $nextPlace = $game['full_page'] === 1 ? 1 : 2;
+                if ($game['full_page'] === 1) $nextPage++;
+            }
+        }
+        $gamesQuery = implode(',', $gamesQuery);
+        // insert games
+        $this->db->request([
+            'query' => 'INSERT INTO gazette_page (page_num,place,idgame) VALUES ' . $gamesQuery . ';',
+        ]);
+
+
+        // TODO: set fill limit ? (else gazette could be full of games and it'll be harder to provide enough games to avoid duplicates)
+        // TODO: get games size, all half-page ? all full-page ? if so, empty space if last publication page not full.
+        // TODO: get song sizes, assuming all will be full-page.
+        // TODO: discuss game types, will there be some in db or not.
+
     }
 
     /**
-     * Create gazette(s) for family.
+     * Returns ids of games already in family gazettes for a given recipient.
+     * @param int $idrecipient
+     * @return array|false
+     */
+    private function getRecipientUsedGames(int $idrecipient)
+    {
+        $games =
+            $this->db->request([
+                'query' => 'SELECT idgame FROM gazette_page WHERE idrecipient = ?;',
+                'type' => 'i',
+                'content' => [$idrecipient],
+                'array' => true,
+            ]);
+        if (empty($games)) return false;
+        foreach ($games as &$game) $game = $game[0];
+        return $games;
+    }
+
+    /**
+     * Returns excluded game types for a given recpipient.
+     * @param int $idrecipient
+     * @return array|false
+     */
+    private function getRecipientExcludedGameTypes(int $idrecipient)
+    {
+        $types = $this->db->request([
+            'query' => 'SELECT idgame_type FROM excluded_game_type WHERE idrecipient = ?;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ]);
+        if (empty($types)) return false;
+        foreach ($types as &$type) $type = $type[0];
+        return $types;
+    }
+
+    /**
+     * Returns games to fill a recipient's gazette.
+     * @param int $idrecipient
+     * @param int $halfPages - Count of half pages to fill
+     * 
+     * @return array Array of ['idgame','full_page'] games.
+     */
+    private function getRecipientFillGames(int $idrecipient, int $halfPages)
+    {
+        $excluded = $this->getRecipientExcludedGameTypes($idrecipient);
+        $usedGames = $this->getRecipientUsedGames($idrecipient);
+        // get excluded game types
+        if ($excluded) {
+            $types = 'type NOT IN (' . implode(',', $excluded) . ') AND ';
+        } else $types = '';
+        $games = $this->db->request([
+            'query' => 'SELECT idgame,full_page FROM game WHERE .' . $types . 'idgame NOT IN (' . $usedGames . ') LIMIT ? ORDER BY created ASC;',
+            'type' => 'i',
+            'content' => [$halfPages],
+        ]);
+        $game = 0;
+        $selectedGames = [];
+        $halfPage = 0;
+        while ($halfPage < $halfPages) {
+            // if $halfPage = $halfpages - 2, add game if !full_page and break
+            if ($halfPage === $halfPages - 2) {
+                while ($games[$game]['full_page'] === 1) $game++;
+                $selectedGames[] = $games[$game];
+                $usedGames .= ',' . $games[$game];
+                $halfPage++;
+                break;
+            }
+            // add game, if full_page, $halfPage++
+            if ($games[$game]['full_page'] === 1) $halfPage++;
+            $selectedGames[] = $games[$game];
+            $usedGames .= ',' . $games[$game++];
+            $halfPage++;
+        }
+        // if not enough games (most likely not enough half page games) fill with half page games
+        if ($halfPage < $halfPages - 1) {
+            $missingGames = $halfPages - ($halfPage + 1);
+            $games = $this->db->request([
+                'query' => 'SELECT idgame FROM game WHERE full_page = 0 AND ' . $types . 'idgame NOT IN (' . $usedGames . ') LIMIT ? ORDER BY created ASC;',
+                'type' => 'i',
+                'content' => [$missingGames],
+                'array' => true,
+            ]);
+            $remaining = $missingGames - count($games);
+            // if not enough games
+            if ($remaining > 0) {
+                // if excluded types, use games of other types
+                if ($excluded) {
+                    $types = implode(',', $excluded);
+                    $otherGames = $this->db->request([
+                        'query' => 'SELECT idgame FROM game WHERE full_page = 0 AND type IN (' . $types . ') AND idgame NOT IN (' . $usedGames . ') LIMIT ? ORDER BY created ASC;',
+                        'type' => 'i',
+                        'content' => [$remaining],
+                        'array' => true,
+                    ]);
+                    $games = [...$games, ...$otherGames];
+                    $remaining = $missingGames - count($games);
+                }
+                // if it's not enough, reuse oldest games
+                if ($remaining > 0) {
+                    $otherGames = $this->db->request([
+                        'query' => 'SELECT idgame FROM game WHERE full_page = 0 LIMIT ? ORDER BY created ASC;',
+                        'type' => 'i',
+                        'content' => [$remaining],
+                        'array' => true,
+                    ]);
+                    $games = [...$games, ...$otherGames];
+                }
+            }
+        }
+        foreach ($games as &$game) $selectedGames[] = ['idgame' => $game[0], 'full_page' => 0];
+        return $selectedGames;
+    }
+
+    private function getGazetteType($idgazette)
+    {
+        return $this->db->request([
+            'query' => 'SELECT type FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ])[0][0];
+    }
+
+    /**
+     * Create and update gazette(s) for family.
      */
     private function setGazettes(int $idfamily, string $date)
     {
+
+        // set print date
+        $printDate = $this->getPrintDate($date);
+
         // get family active subscriptions
         $subscriptions = $this->getFamilySubscriptions($idfamily);
         $types = [];
@@ -2060,18 +2356,34 @@ trait Gazet
             }
         } else $types = [1];
         foreach ($types as $type) {
+
             // if no gazette of this type, create one
-            $gazette = $this->db->request([
-                'query' => 'SELECT idgazette FROM gazette WHERE ? < print_date AND ? >= DATE_SUB(print_date,INTERVAL 1 MONTH) AND type = ? LIMIT 1;',
-                'type' => 'ssi',
-                'content' => [$date, $date, $type],
+            $idgazette = $this->db->request([
+                'query' => 'SELECT idgazette FROM gazette WHERE print_date = ? AND type = ? LIMIT 1;',
+                'type' => 'si',
+                'content' => [$printDate, $type],
                 'array' => true,
-            ])[0][0] ?? false;
+            ]);
+
+            if (empty($idgazette)) {
+                $this->db->request([
+                    'query' => 'INSERT INTO gazette (idfamily,type,print_date) VALUES (?,?,?);',
+                    'type' => 'iis',
+                    'content' => [$idfamily, $type, $printDate],
+                ]);
+                $idgazette = $this->db->request([
+                    'query' => 'SELECT idgazette FROM gazette WHERE print_date = ? AND type = ? LIMIT 1;',
+                    'type' => 'si',
+                    'content' => [$printDate, $type],
+                    'array' => true,
+                ])[0][0];
+            } else {
+                $idgazette = $idgazette[0][0];
+            }
+
+            // fill or update gazette
+            $this->updateGazette($idgazette);
         }
-
-        // fill gazette(s) with publications of the running month if any
-
-        // let admin/referent know if gazette overflows
     }
 
     /**
@@ -2341,6 +2653,119 @@ trait Gazet
             'type' => 'si',
             'content' => [$content, $idcomment],
         ]);
+    }
+
+    /**
+     * Update gazette with publications
+     */
+    private function updateGazette($idgazette)
+    {
+        $overflow = false;
+        // get gazette data
+        $gazette = $this->getGazetteData($idgazette);
+        // get gazette_type data
+        $type = $this->getGazetteTypeData($gazette['type']);
+
+        // remove gazettes pages but keep modifications
+        $this->db->request([
+            'query' => 'DELETE FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+
+        // get publications
+        $publications = $this->db->request([
+            'query' => 'SELECT idpublication,idlayout,created FROM publication WHERE idfamily = ? AND private = 0 AND created >= DATE_SUB(?, INTERVAL 1 MONTH) AND created < ? ORDER BY created ASC;',
+            'type' => 'iss',
+            'content' => [$gazette['idfamily'], $gazette['print_date'], $gazette['print_date']],
+        ]);
+        if (empty($publications)) return false;
+
+        // get total publications half pages count and publications data
+        $halfpages = 0;
+        foreach ($publications as &$publication) {
+            $publication['likes'] = $this->getPublicationLikesCount($publication['idpublication']);
+            $publication['fullpage'] = $this->getLayoutFullPage($publication['idlayout']);
+            $halfpages += $publication['fullpage'] ? 2 : 1;
+        }
+        $gazetteHalfpages = ($type['pages'] - 2) * 2;
+
+        // if $halfpages > $gazetteHalfpages, order the publications by likes
+        if ($halfpages > $gazetteHalfpages) {
+            $overflow = true;
+            // $sort = sortAndIncludeOuterKey($publications,'likes','idpublication');
+            usort($publications, function ($a, $b) {
+                return $b['likes'] - $a['likes'];
+            });
+
+            // extract the right amount of publications
+            $hp = 0;
+            for ($pub = 0; $pub < count($publications); $pub++) {
+                $size = $publications[$pub]['fullpage'] ? 2 : 1;
+                if ($hp + $size < $gazetteHalfpages) {
+                    $hp += $size;
+                    if ($hp === $gazetteHalfpages) {
+                        array_splice($publications, $pub + 1);
+                        break;
+                    }
+                } else if ($hp + $size > $gazetteHalfpages) {
+                    array_splice($publications, $pub--, 1);
+                }
+            }
+            // reorder by date
+            usort($publications, function ($a, $b) {
+                return strtotime($a['created']) - strtotime($b['created']);
+            });
+
+            // fill gaps induced by publications sizes
+            $half = 0;
+            for ($pub = 0; $pub < count($publications); $pub++) {
+                if ($publications[$pub]['fullpage']) {
+                    if ($half === 1) {
+                        // retrieve next size 1 publication and put it before current size 2 publication
+                        for ($i = $pub + 1; $i < count($publications); $i++) {
+                            if (!$publication[$i]['fullpage']) {
+                                changeItemIndex($publications, $i, $pub);
+                                break;
+                            }
+                        }
+                        $half = 0;
+                    }
+                } else $half = $half === 1 ? 0 : 1;
+            }
+        }
+
+        // then fill gazette with publications
+        $page = 1;
+        $place = 0;
+        foreach ($publications as $publication) {
+            if ($page < $type['pages']) {
+                if (!$publication['fullpage']) {
+                    if ($place === 1) {
+                        $place = 2;
+                    } else {
+                        $place = 1;
+                        $page++;
+                    }
+                } else {
+                    $place = 1;
+                    $page++;
+                }
+                $this->db->request([
+                    'query' => 'INSERT INTO gazette_page (idgazette,page_num,place,idpublication) VALUES (?,?,?,?);',
+                    'type' => 'iiii',
+                    'content' => [$idgazette, $page, $place, $publication['idpublication']],
+                ]);
+            }
+        }
+
+        // check for conflicting recipient modifications after update
+        $this->checkGazetteModifications($idgazette);
+
+        // let admin/referent know if gazette overflows, and suggest to take a bigger gazette type
+        if ($overflow) {
+            // TODO: notification to admin/referent
+        }
     }
 
     private function updateMember(int $iduser, array $parameters)
