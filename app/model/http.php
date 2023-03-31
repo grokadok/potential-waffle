@@ -403,6 +403,13 @@ trait Http
                 $responseContent = ['f' => 43, 'updated' => $this->userUpdateComment($iduser, $post['i'], $post['c'])];
             }
 
+            /////////////////////////////////////////////////////
+            // FILL GAZETTE WITH GAMES (44)
+            /////////////////////////////////////////////////////
+
+            if ($f === 44) {
+                $responseContent = ['f' => 44, 'filled' => $this->fillGazetteWithGames($iduser, $post['i'], $post['c'])];
+            }
 
 
 
