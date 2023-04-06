@@ -608,7 +608,7 @@ trait Gazet
     private function getFamilyGazettes(int $idfamily)
     {
         return $this->db->request([
-            'query' => 'SELECT idgazette,print_date,printed,idobject FROM gazette WHERE idfamily = ?;',
+            'query' => 'SELECT idgazette,print_date,printed,idobject,type FROM gazette WHERE idfamily = ?;',
             'type' => 'i',
             'content' => [$idfamily],
         ]);
@@ -784,6 +784,15 @@ trait Gazet
         ])[0][0] ?? false;
     }
 
+    private function getGameData(int $idgame)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idobject,type,difficulty,full_page FROM game WHERE idgame = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgame],
+        ])[0];
+    }
+
     /**
      * Returns true if full page.
      * @param int $idgame
@@ -836,6 +845,9 @@ trait Gazet
         return $games;
     }
 
+    /**
+     * Returns all gazette's modifications.
+     */
     private function getGazetteModifications(int $idgazette)
     {
         return $this->db->request([
@@ -845,6 +857,25 @@ trait Gazet
         ]);
     }
 
+    /**
+     * Returns gazette's modifications' data for a given recipient.
+     */
+    private function getGazetteModificationsData(int $idgazette, int $idrecipient)
+    {
+        $pages = $this->db->request([
+            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient = ? ORDER BY page_num,place,idrecipient ASC;',
+            'type' => 'ii',
+            'content' => [$idgazette, $idrecipient],
+        ]);
+        // get place content
+        foreach ($pages as &$place) {
+            if ($place['idpublication'] !== null) $place['publication'] = $this->getPublicationData($place['idpublication']);
+            else if ($place['idgame'] !== null) $place['game'] = $this->getGameData($place['idgame']);
+            else if ($place['idsong'] !== null) $place['song'] = $this->getSongData($place['idsong']);
+        }
+        return $pages;
+    }
+
     private function getGazettePages(int $idgazette)
     {
         return $this->db->request([
@@ -852,6 +883,22 @@ trait Gazet
             'type' => 'i',
             'content' => [$idgazette],
         ]);
+    }
+
+    private function getGazettePagesData(int $idgazette)
+    {
+        $pages = $this->db->request([
+            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL ORDER BY page_num,place,idrecipient ASC;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+        // get place content
+        foreach ($pages as &$place) {
+            if ($place['idpublication'] !== null) $place['publication'] = $this->getPublicationData($place['idpublication']);
+            else if ($place['idgame'] !== null) $place['game'] = $this->getGameData($place['idgame']);
+            else if ($place['idsong'] !== null) $place['song'] = $this->getSongData($place['idsong']);
+        }
+        return $pages;
     }
 
     /**
@@ -923,6 +970,13 @@ trait Gazet
             'content' => [$idtype],
             'array' => true,
         ])[0][0];
+    }
+
+    private function getGazetteTypes()
+    {
+        return $this->db->request([
+            'query' => 'SELECT idgazette_type,pages FROM gazette_type;',
+        ]);
     }
 
     private function getLayout(int $idlayout)
@@ -1011,6 +1065,41 @@ trait Gazet
         ]);
         foreach ($comments as &$comment) $comment = $comment[0];
         return $comments;
+    }
+
+    private function getPublicationData(int $idpublication)
+    {
+        $publication = $this->db->request([
+            'query' => "SELECT title,
+            type,
+            author,
+            description as text,
+            idlayout,
+            idbackground,
+            private,
+            created
+            FROM publication
+            WHERE idpublication = ?;",
+            'type' => 'i',
+            'content' => [$idpublication],
+        ])[0];
+
+        // get layout
+        $publication['layout'] = $this->getLayout($publication['idlayout']);
+        // // get like
+        // if ($iduser !== $publication['author'])
+        // $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
+        // get likes count
+        $publication['likes'] = $this->getPublicationLikesCount($idpublication);
+        // get comments count
+        $publication['comments'] = $this->getPublicationCommentsCount($idpublication);
+        // get images
+        $publication['images'] = $this->getPublicationPictures($idpublication);
+        // get text
+        if (empty($publication['text']))
+            $publication['text'] = $this->getPublicationText($idpublication);
+        // $publication['author'] = $this->getUserName($publication['author']); // users info already in app
+        return $publication;
     }
 
     private function getPublicationDate(int $idpublication)
@@ -1211,6 +1300,15 @@ trait Gazet
             'array' => true,
         ])[0];
         return bin2hex($object[0]) . '.' . $object[1];
+    }
+
+    private function getSongData(int $idsong)
+    {
+        return $this->db->request([
+            'query' => 'SELECT title,content,link FROM song WHERE idsong = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idsong],
+        ])[0];
     }
 
     /**
@@ -1434,6 +1532,7 @@ trait Gazet
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
                 $family['members'] = $this->getFamilyMembersData($family['id']); // get members
                 $family['gazettes'] = $this->getFamilyGazettes($family['id']); // get gazettes
+                if (!empty($family['gazettes'])) var_dump($family['gazettes']);
                 if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
                     $family['invitations'] = $this->getFamilyInvitations($family['id']);
                     $family['requests'] = $this->getFamilyRequests($family['id']);
@@ -2278,24 +2377,6 @@ trait Gazet
         return $games;
     }
 
-    /**
-     * Returns excluded game types for a given recpipient.
-     * @param int $idrecipient
-     * @return array|false
-     */
-    // private function getRecipientExcludedGameTypes(int $idrecipient)
-    // {
-    //     $types = $this->db->request([
-    //         'query' => 'SELECT idgame_type FROM excluded_game_type WHERE idrecipient = ?;',
-    //         'type' => 'i',
-    //         'content' => [$idrecipient],
-    //         'array' => true,
-    //     ]);
-    //     if (empty($types)) return false;
-    //     foreach ($types as &$type) $type = $type[0];
-    //     return $types;
-    // }
-
     private function getRecipientGameTypes(int $idrecipient)
     {
         return $this->db->request([
@@ -3125,12 +3206,38 @@ trait Gazet
     private function userFillGazetteWithGames(int $iduser, int $idfamily, int $idrecipient, int $idgazette)
     {
         // if user is referent
+        if (!$this->userIsReferent($iduser, $idrecipient) || !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
+        $this->fillGazetteWithGames($idgazette, $idrecipient);
+        return $this->getGazettePagesData($idgazette);
     }
 
     private function userGetFile(int $iduser, int $idobject)
     {
         if (!$this->userCanReadObject($iduser, $idobject)) return false; // if file doesn't exist in s3
         return ($this->s3->presignedUriGet($this->getS3ObjectKeyFromId($idobject)));
+    }
+
+    /**
+     * Returns user's gazette data with recipients' modifications if any.
+     * @param int $iduser
+     * @param int $idfamily
+     * @param int $idgazette
+     * @return array
+     */
+    private function userGetGazetteData($iduser, $idfamily, $idgazette)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        // get global gazette data
+        $gazette = $this->getGazettePagesData($idgazette);
+        // if referent, get recipient's modifications as well
+        $recipients = $this->getReferentRecipients($iduser, $idfamily);
+        if (empty($recipients)) return $gazette;
+        foreach ($recipients as $recipient) {
+            // get modifications for given recipient
+            $modifications = $this->getGazetteModificationsData($idgazette, $recipient);
+            if (!empty($modifications)) foreach ($modifications as $modification) $gazette[] = $modification;
+        }
+        return $gazette;
     }
 
     /**

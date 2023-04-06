@@ -72,6 +72,7 @@ trait Http
                     'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
                     'families' => $this->getUserFamiliesData($iduser),
+                    'gazetteTypes' => $this->getGazetteTypes(),
                     'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
                     'recipient' => $this->userIsRecipient($iduser),
@@ -408,8 +409,18 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 44) {
-                $responseContent = ['f' => 44, 'filled' => $this->fillGazetteWithGames($iduser, $post['i'], $post['c'])];
+                $responseContent = ['f' => 44, 'filled' => $this->userFillGazetteWithGames($iduser, $post['i'], $post['r'], $post['g'])];
             }
+
+            /////////////////////////////////////////////////////
+            // GET GAZETTE DATA (45)
+            /////////////////////////////////////////////////////
+
+            if ($f === 45) {
+                $responseContent = ['f' => 45, 'gazette' => $this->userGetGazetteData($iduser, $post['i'], $post['g'])];
+            }
+
+
 
 
 
