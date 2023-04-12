@@ -78,7 +78,7 @@ class FWServer
         private $db = new DBRequest(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
-        private $table = new Table(1024),
+        // private $table = new Table(1024),
     ) {
         $this->appname = getenv('APP_NAME');
         // $this->table->column("user", Table::TYPE_INT);
