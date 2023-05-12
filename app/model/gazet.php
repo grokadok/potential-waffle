@@ -2591,18 +2591,16 @@ trait Gazet
             $type .= 's';
             $content[] = $parameters['text'];
         }
-        if ($parameters['layout'][0] !== 'f') {
+        if ($parameters['layout'][0] === 'f') {
             $into .= ',full_page';
             $values .= ',?';
             $type .= 'i';
             $content[] = 1;
         }
-        if ($parameters['layout'][1] !== 'j') {
-            $into .= ',idlayout';
-            $values .= ',?';
-            $type .= 'i';
-            $content[] = $this->getLayoutFromString($parameters['layout']);
-        }
+        $into .= ',idlayout';
+        $values .= ',?';
+        $type .= 'i';
+        $content[] = $this->getLayoutFromString($parameters['layout']);
 
         $this->db->request([
             'query' => 'INSERT INTO publication (author,idfamily,private,title' . $into . ') VALUES (?,?,?,?' . $values . ');',
@@ -2940,6 +2938,9 @@ trait Gazet
 
     private function updatePublication(int $idpublication, array $parameters)
     {
+        print('@@@ updatePublication: ' . $idpublication . PHP_EOL);
+        var_dump($parameters);
+        print('@@@ END updatePublication' . PHP_EOL);
         if ($parameters['text'] !== null || $parameters['title'] !== null || !empty($parameters['layout']) || $parameters['private'] !== null) {
             $set = [];
             $type = '';
@@ -2979,26 +2980,31 @@ trait Gazet
             ]);
         }
         // images update
-        if (!empty($parameters['images'])) {
+        if ($parameters['images'] !== null) {
             $pictures = $this->getPublicationPictures($idpublication); // get publication images
-            $ids = [];
-            foreach ($parameters['images'] as $image) {
-                $ids[] = $image['id'];
-                $this->setPublicationPicture($idpublication, $image);
-            }
-            print('ids: ' . implode(', ', $ids) . PHP_EOL);
-            foreach ($pictures as $picture) // remove images not in parameters
-            {
-                print('picture: ' . $picture['idobject'] . PHP_EOL);
-                if (!in_array($picture['idobject'], $ids, false)) {
-                    print('remove: ' . $picture['idobject'] . PHP_EOL);
-                    $this->removePublicationPicture($picture['idobject'], $idpublication);
+            // if no images in parameters, remove all images
+            if (empty($parameters['images'])) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject'], $idpublication);
+            // else apply modifications
+            else {
+                $ids = [];
+                foreach ($parameters['images'] as $image) {
+                    $ids[] = $image['id'];
+                    $this->setPublicationPicture($idpublication, $image);
+                }
+                print('ids: ' . implode(', ', $ids) . PHP_EOL);
+                foreach ($pictures as $picture) // remove images not in parameters
+                {
+                    print('picture: ' . $picture['idobject'] . PHP_EOL);
+                    if (!in_array($picture['idobject'], $ids, false)) {
+                        print('remove: ' . $picture['idobject'] . PHP_EOL);
+                        $this->removePublicationPicture($picture['idobject'], $idpublication);
+                    }
                 }
             }
         }
         // gazettes update
         $gazettes = $this->getGazettesByPublication($idpublication);
-        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->updateGazette($gazette['idgazette']);
+        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->updateGazette($gazette);
     }
 
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
