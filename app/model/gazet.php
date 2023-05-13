@@ -2938,9 +2938,6 @@ trait Gazet
 
     private function updatePublication(int $idpublication, array $parameters)
     {
-        print('@@@ updatePublication: ' . $idpublication . PHP_EOL);
-        var_dump($parameters);
-        print('@@@ END updatePublication' . PHP_EOL);
         if ($parameters['text'] !== null || $parameters['title'] !== null || !empty($parameters['layout']) || $parameters['private'] !== null) {
             $set = [];
             $type = '';
@@ -2991,12 +2988,9 @@ trait Gazet
                     $ids[] = $image['id'];
                     $this->setPublicationPicture($idpublication, $image);
                 }
-                print('ids: ' . implode(', ', $ids) . PHP_EOL);
                 foreach ($pictures as $picture) // remove images not in parameters
                 {
-                    print('picture: ' . $picture['idobject'] . PHP_EOL);
                     if (!in_array($picture['idobject'], $ids, false)) {
-                        print('remove: ' . $picture['idobject'] . PHP_EOL);
                         $this->removePublicationPicture($picture['idobject'], $idpublication);
                     }
                 }
@@ -3159,14 +3153,15 @@ trait Gazet
     private function updateUserAvatar(int $iduser, string $key)
     {
         $newObject = $this->s3->move($key);
-        $idobject = $this->getUserAvatar($iduser);
-        if ($idobject) return $this->updateS3Object($idobject, $newObject);
+        $oldObject = $this->getUserAvatar($iduser);
+        // if ($idobject) return $this->updateS3Object($idobject, $newObject);
         $idobject = $this->setS3Object($iduser, $newObject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idobject, $iduser],
         ]);
+        if ($oldObject) $this->removeS3Object($oldObject);
         return $idobject;
     }
 
