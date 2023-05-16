@@ -417,7 +417,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 45) {
-                $responseContent = ['f' => 45, 'gazette' => $this->userGetGazetteData($iduser, $post['i'], $post['g'])];
+                $responseContent = ['f' => 45, 'gazette' => $this->userGetGazettePages($iduser, $post['i'], $post['g'])];
             }
 
 

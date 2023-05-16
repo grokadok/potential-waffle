@@ -829,7 +829,7 @@ trait Gazet
     }
 
     /**
-     * Returns gazette's games' ids.
+     * Returns gazette's games' ids excluding modifications.
      * @return int[]
      */
     private function getGazetteGames(int $idgazette)
@@ -878,26 +878,46 @@ trait Gazet
 
     private function getGazettePages(int $idgazette)
     {
-        return $this->db->request([
-            'query' => 'SELECT page_num,place,idrecipient,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL;',
+        $pages = [];
+        foreach ($this->db->request([
+            'query' => 'SELECT page_num,place,idrecipient,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ?;',
             'type' => 'i',
             'content' => [$idgazette],
-        ]);
+        ]) as $place) {
+            if ($place['idrecipient'] === null)
+                $pages[$place['page_num']][$place['place']] = [
+                    'idpublication' => $place['idpublication'],
+                    'idgame' => $place['idgame'],
+                    'idsong' => $place['idsong']
+                ];
+            else $pages[$place['page_num']][$place['place']]['modification'][$place['idrecipient']] = [
+                'idpublication' => $place['idpublication'],
+                'idgame' => $place['idgame'],
+                'idsong' => $place['idsong']
+            ];
+        }
+        print('@@@ PAGES: ' . PHP_EOL);
+        var_dump($pages);
+        print('@@@ END PAGES: ' . PHP_EOL);
+        return $pages;
     }
 
     private function getGazettePagesData(int $idgazette)
     {
-        $pages = $this->db->request([
-            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND idrecipient IS NULL ORDER BY page_num,place,idrecipient ASC;',
-            'type' => 'i',
-            'content' => [$idgazette],
-        ]);
-        // get place content
-        foreach ($pages as &$place) {
-            if ($place['idpublication'] !== null) $place['publication'] = $this->getPublicationData($place['idpublication']);
-            else if ($place['idgame'] !== null) $place['game'] = $this->getGameData($place['idgame']);
-            else if ($place['idsong'] !== null) $place['song'] = $this->getSongData($place['idsong']);
-        }
+        $pages = $this->getGazettePages($idgazette);
+        foreach ($pages as $page)
+            foreach ($page as &$place) {
+                if (!empty($place['modification'])) {
+                    foreach ($place['modification'] as &$modification) {
+                        if ($modification['idpublication'] !== null) $modification['publication'] = $this->getPublicationData($modification['idpublication']);
+                        else if ($modification['idgame'] !== null) $modification['game'] = $this->getGameData($modification['idgame']);
+                        else if ($modification['idsong'] !== null) $modification['song'] = $this->getSongData($modification['idsong']);
+                    }
+                }
+                if ($place['idpublication'] !== null) $place['publication'] = $this->getPublicationData($place['idpublication']);
+                else if ($place['idgame'] !== null) $place['game'] = $this->getGameData($place['idgame']);
+                else if ($place['idsong'] !== null) $place['song'] = $this->getSongData($place['idsong']);
+            }
         return $pages;
     }
 
@@ -2253,13 +2273,17 @@ trait Gazet
 
         $recipients = [];
         foreach ($modifications as $modification)
-            $recipients[$modification['idrecipient']][$modification['page_num']][$modification['place']] = ['idpublication' => $modification['idpublication'], 'idgame' => $modification['idgame'], 'idsong' => $modification['idsong']];
+            $recipients[$modification['idrecipient']][$modification['page_num']][$modification['place']] = [
+                'idpublication' => $modification['idpublication'],
+                'idgame' => $modification['idgame'],
+                'idsong' => $modification['idsong']
+            ];
         $gazette = $this->getGazettePages($idgazette);
 
         // TODO: check gazette mods should prioritize new publications to game modifications
 
         // for each modification, check if it's a duplicate
-        foreach ($modifications as $modification) {
+        foreach ($modifications as $modification) { // TODO: to refact according to getGazettePages refact
             if (!empty($modification['idpublication'])) {
                 // check if publication is already in gazette
                 $duplicate = array_filter($gazette, function ($page) use ($modification) {
@@ -3225,19 +3249,31 @@ trait Gazet
      * @param int $idgazette
      * @return array
      */
-    private function userGetGazetteData($iduser, $idfamily, $idgazette)
+    private function userGetGazettePages($iduser, $idfamily, $idgazette)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        $gazette = $this->getGazetteData($idgazette);
         // get global gazette data
-        $gazette = $this->getGazettePagesData($idgazette);
+        $gazette['pages'] = $this->getGazettePagesData($idgazette);
+        // $modifications = $this->getGazetteModifications($idgazette);
+        // if (empty($modifications)) return $gazette;
+        // foreach ($modifications as $modification) {
+        //     # code...
+        // }
+
+        // $gazette['recipients']=$this->getFamilyRecipients($idfamily);
         // if referent, get recipient's modifications as well
-        $recipients = $this->getReferentRecipients($iduser, $idfamily);
-        if (empty($recipients)) return $gazette;
-        foreach ($recipients as $recipient) {
-            // get modifications for given recipient
-            $modifications = $this->getGazetteModificationsData($idgazette, $recipient);
-            if (!empty($modifications)) foreach ($modifications as $modification) $gazette[] = $modification;
-        }
+        // $recipients = $this->getReferentRecipients($iduser, $idfamily);
+
+
+        // get modifications for given gazette's page
+
+        // if (empty($recipients)) return $gazette;
+        // foreach ($recipients as $recipient) {
+        //     // get modifications for given recipient
+        //     $modifications = $this->getGazetteModificationsData($idgazette, $recipient);
+        //     if (!empty($modifications)) foreach ($modifications as $modification) $gazette[] = $modification;
+        // }
         return $gazette;
     }
 
