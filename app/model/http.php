@@ -321,7 +321,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 33) {
-                $responseContent = ['f' => 33, 'added' => $this->setPublication($iduser, $post['i'], $post['p'])];
+                $responseContent = ['f' => 33, 'added' => $this->userSetPublication($iduser, $post['i'], $post['p'])];
             }
 
             /////////////////////////////////////////////////////
@@ -413,11 +413,19 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // GET GAZETTE DATA (45)
+            // GET GAZETTE PAGES (45)
             /////////////////////////////////////////////////////
 
             if ($f === 45) {
                 $responseContent = ['f' => 45, 'gazette' => $this->userGetGazettePages($iduser, $post['i'], $post['g'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET FAMILY GAZETTES (46)
+            /////////////////////////////////////////////////////
+
+            if ($f === 46) {
+                $responseContent = ['f' => 46, 'gazettes' => $this->userGetGazettes($iduser, $post['i'])];
             }
 
 
