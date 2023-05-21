@@ -1004,16 +1004,13 @@ trait Gazet
                 'idsong' => $place['idsong']
             ];
         }
-        print('@@@ PAGES: ' . PHP_EOL);
-        var_dump($pages);
-        print('@@@ END PAGES: ' . PHP_EOL);
         return $pages;
     }
 
     private function getGazettePagesData(int $idgazette)
     {
         $pages = $this->getGazettePages($idgazette);
-        foreach ($pages as $page)
+        foreach ($pages as &$page) {
             foreach ($page as &$place) {
                 if (!empty($place['modification'])) {
                     foreach ($place['modification'] as &$modification) {
@@ -1026,6 +1023,7 @@ trait Gazet
                 else if ($place['idgame'] !== null) $place['game'] = $this->getGameData($place['idgame']);
                 else if ($place['idsong'] !== null) $place['song'] = $this->getSongData($place['idsong']);
             }
+        }
         return $pages;
     }
 
@@ -3073,9 +3071,18 @@ trait Gazet
         }
         // fill gazette with publications
         $page = 1;
-        $place = 0;
+        $place = 1;
         foreach ($publications as $publication) {
             if ($page < $type) {
+                if ($publication['full_page'] === 1 && $place === 2) {
+                    $place = 1;
+                    $page++;
+                }
+                $this->db->request([
+                    'query' => 'INSERT INTO gazette_page (idgazette,page_num,place,idpublication) VALUES (?,?,?,?);',
+                    'type' => 'iiii',
+                    'content' => [$idgazette, $page, $place, $publication['idpublication']],
+                ]);
                 if ($publication['full_page'] === 0) {
                     if ($place === 1) {
                         $place = 2;
@@ -3087,11 +3094,6 @@ trait Gazet
                     $place = 1;
                     $page++;
                 }
-                $this->db->request([
-                    'query' => 'INSERT INTO gazette_page (idgazette,page_num,place,idpublication) VALUES (?,?,?,?);',
-                    'type' => 'iiii',
-                    'content' => [$idgazette, $page, $place, $publication['idpublication']],
-                ]);
             }
         }
 
