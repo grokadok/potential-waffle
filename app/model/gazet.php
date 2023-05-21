@@ -3061,7 +3061,10 @@ trait Gazet
                     // retrieve next size 1 publication and put it before current size 2 publication
                     for ($nextPub = $pub + 1; $nextPub < count($publications); $nextPub++) {
                         if ($publications[$nextPub]['full_page'] === 0) {
-                            changeItemIndex($publications, $nextPub, $pub);
+                            // Insert the item at the new index
+                            array_splice($publications, $pub, 0, [$publications[$nextPub]]);
+                            // Remove the item from the original index
+                            array_splice($publications, $nextPub + 1, 1);
                             break;
                         }
                     }

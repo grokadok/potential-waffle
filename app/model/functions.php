@@ -170,6 +170,7 @@ function sortAndIncludeOuterKey(array $arrayA, string $sortParam, string $outerK
  */
 function changeItemIndex(array &$items, int $oldIndex, int $newIndex)
 {
+    print("changeItemIndex from $oldIndex to $newIndex" . PHP_EOL);
     if ($oldIndex < 0 || $oldIndex >= count($items) || $newIndex < 0 || $newIndex >= count($items)) {
         throw new InvalidArgumentException("Invalid index values");
     }
@@ -182,4 +183,5 @@ function changeItemIndex(array &$items, int $oldIndex, int $newIndex)
 
     // Insert the item at the new index
     array_splice($items, $newIndex, 0, $item);
+    return $items;
 }
