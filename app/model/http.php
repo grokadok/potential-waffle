@@ -152,7 +152,9 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 10) {
-                $responseContent = ['f' => 10, 'created' => $this->createRecipient($iduser, $post['i'], $post['r'])];
+                print('@@@ create recipient' . PHP_EOL);
+                var_dump($post['r']);
+                $responseContent = ['f' => 10, 'created' => $this->userCreateRecipient($iduser, $post['i'], $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -284,7 +286,7 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // HANDLE USER AVATAR UPLOAD CONFIRMATION (27)
+            // UPDATE RECIPIENT AVATAR (27)
             /////////////////////////////////////////////////////
 
             if ($f === 27) {
@@ -426,6 +428,14 @@ trait Http
 
             if ($f === 46) {
                 $responseContent = ['f' => 46, 'gazettes' => $this->userGetGazettes($iduser, $post['i'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // REMOVE RECIPIENT AVATAR (47)
+            /////////////////////////////////////////////////////
+
+            if ($f === 47) {
+                $responseContent = ['f' => 47, 'removed' => $this->userRemovesRecipientAvatar($iduser, $post['i'], $post['r'])];
             }
 
 

@@ -195,30 +195,30 @@ trait Gazet
             'query' => 'INSERT INTO address (name,phone,field1,field2,field3,postal,city,state,country) VALUES (?,?,?,?,?,?,?,?,?);',
             'type' => 'sssssssss',
             'content' => [
-                $recipient['name'],
-                $recipient['phone'],
-                $recipient['field1'],
-                $recipient['field2'] ?? '',
-                $recipient['field3'] ?? '',
-                $recipient['postal'],
-                $recipient['city'],
-                $recipient['state'],
-                $recipient['country'],
+                $recipient['address']['name'],
+                $recipient['address']['phone'] ?? '',
+                $recipient['address']['field1'],
+                $recipient['address']['field2'] ?? '',
+                $recipient['address']['field3'] ?? '',
+                $recipient['address']['postal'],
+                $recipient['address']['city'],
+                $recipient['address']['state'],
+                $recipient['address']['country'],
             ],
         ]);
         $idaddress = $this->db->request([
             'query' => 'SELECT idaddress FROM address WHERE name = ? AND phone = ? AND field1 = ? AND field2 = ? AND field3 = ? AND postal = ? AND city = ? AND state = ? AND country = ? LIMIT 1;',
             'type' => 'sssssssss',
             'content' => [
-                $recipient['name'],
-                $recipient['phone'],
-                $recipient['field1'],
-                $recipient['field2'] ?? '',
-                $recipient['field3'] ?? '',
-                $recipient['postal'],
-                $recipient['city'],
-                $recipient['state'],
-                $recipient['country'],
+                $recipient['address']['name'],
+                $recipient['address']['phone'] ?? '',
+                $recipient['address']['field1'],
+                $recipient['address']['field2'] ?? '',
+                $recipient['address']['field3'] ?? '',
+                $recipient['address']['postal'],
+                $recipient['address']['city'],
+                $recipient['address']['state'],
+                $recipient['address']['country'],
             ],
             'array' => true,
         ])[0][0];
@@ -232,6 +232,12 @@ trait Gazet
             $values = ',?';
             $type = 'i';
             $content = [$iduser];
+        }
+        if (!empty($recipient['avatar'])) {
+            $into .= ',avatar';
+            $values .= ',?';
+            $type .= 'i';
+            $content[] = $recipient['avatar'];
         }
 
         // create recipient
@@ -3321,7 +3327,7 @@ trait Gazet
         if (!$this->userIsReferent($iduser, $idrecipient)) return false;
         $newObject = $this->s3->move($key);
         $idobject = $this->getRecipientAvatar($idrecipient);
-        if ($idobject) return $this->updateS3Object($idobject, $newObject);
+        if ($idobject) $this->removeS3Object($idobject);
         $idobject = $this->setS3Object($iduser, $newObject);
         $this->db->request([
             'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
@@ -3376,7 +3382,6 @@ trait Gazet
     {
         $newObject = $this->s3->move($key);
         $oldObject = $this->getUserAvatar($iduser);
-        // if ($idobject) return $this->updateS3Object($idobject, $newObject);
         $idobject = $this->setS3Object($iduser, $newObject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
@@ -3424,6 +3429,12 @@ trait Gazet
         // if user is owner
         // if user and owner share a family
         return $iduser === $object['owner'] || $this->usersHaveCommonFamily($iduser, $object['owner']);
+    }
+
+    private function userCreateRecipient(int $iduser, int $idfamily, array $recipient)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        return $this->createRecipient($iduser, $idfamily, $recipient);
     }
 
     private function userFillGazetteWithGames(int $iduser, int $idfamily, int $idrecipient, int $idgazette)
@@ -3631,6 +3642,13 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
         $this->removePublication($idpublication);
+        return true;
+    }
+
+    private function userRemovesRecipientAvatar(int $iduser, int $idfamily, int $idrecipient)
+    {
+        if (!$this->userIsReferent($iduser, $idrecipient) && !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
+        $this->removeRecipientAvatar($idrecipient);
         return true;
     }
 
