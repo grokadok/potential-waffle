@@ -2885,13 +2885,15 @@ trait Gazet
         $this->createRecipient($iduser, $families[1], [
             'display_name' => $this->getAvailableRecipientName($families[1], 'user ' . $iduser),
             'birthdate' => '2023-01-06',
-            'name' => 'User Tester',
-            'phone' => '+33612345678',
-            'field1' => '97 Gazet\' Street',
-            'postal' => '98002',
-            'city' => 'Gazet City',
-            'state' => 'Gazet Highlands',
-            'country' => 'Gazet Republic',
+            'address' => [
+                'name' => 'User Tester',
+                'phone' => '+33612345678',
+                'field1' => '97 Gazet\' Street',
+                'postal' => '98002',
+                'city' => 'Gazet City',
+                'state' => 'Gazet Highlands',
+                'country' => 'Gazet Republic',
+            ],
             'self' => true,
         ]);
         $this->familyEmailInvite($bots[0], $families[2], $this->getUserEmail($iduser)); // invite user in third family
@@ -2914,24 +2916,28 @@ trait Gazet
         $this->createRecipient($iduser, $idfamily, [ // create a recipient by the admin
             'display_name' => 'Recipient ' . $i - 9,
             'birthdate' => '2023-01-06',
-            'name' => 'Lord Recipient ' . $i - 9,
-            'phone' => '+336123456' . $i++ + 1,
-            'field1' => '97 Gazet\' Street',
-            'postal' => '98002',
-            'city' => 'Gazet City',
-            'state' => 'Gazet Highlands',
-            'country' => 'Gazet Republic',
+            'address' => [
+                'name' => 'Lord Recipient ' . $i - 9,
+                'phone' => '+336123456' . $i++ + 1,
+                'field1' => '97 Gazet\' Street',
+                'postal' => '98002',
+                'city' => 'Gazet City',
+                'state' => 'Gazet Highlands',
+                'country' => 'Gazet Republic',
+            ],
         ]);
         $this->createRecipient($bots[$i - 11], $idfamily, [ // create a recipient by a member
             'display_name' => 'Recipient ' . $i - 9,
             'birthdate' => '2023-01-06',
-            'name' => 'Lord Recipient ' . $i - 9,
-            'phone' => '+336123456' . $i++ + 1,
-            'field1' => '97 Gazet\' Street',
-            'postal' => '98002',
-            'city' => 'Gazet City',
-            'state' => 'Gazet Highlands',
-            'country' => 'Gazet Republic',
+            'address' => [
+                'name' => 'Lord Recipient ' . $i - 9,
+                'phone' => '+336123456' . $i++ + 1,
+                'field1' => '97 Gazet\' Street',
+                'postal' => '98002',
+                'city' => 'Gazet City',
+                'state' => 'Gazet Highlands',
+                'country' => 'Gazet Republic',
+            ],
         ]);
     }
 

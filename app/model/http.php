@@ -522,13 +522,15 @@ trait Http
             while ($i < 13) $this->createRecipient($users[$i - 11], $family[0], [ // create a recipient by the admin and by one member
                 'display_name' => 'Recipient ' . $i - 10,
                 'birthdate' => '2023-01-06',
-                'name' => 'Lord Recipient ' . $i - 10,
-                'phone' => '+336123456' . $i++,
-                'field1' => '97 Gazet\' Street',
-                'postal' => '98002',
-                'city' => 'Gazet City',
-                'state' => 'Gazet Highlands',
-                'country' => 'Gazet Republic',
+                'address' => [
+                    'name' => 'Lord Recipient ' . $i - 10,
+                    'phone' => '+336123456' . $i++,
+                    'field1' => '97 Gazet\' Street',
+                    'postal' => '98002',
+                    'city' => 'Gazet City',
+                    'state' => 'Gazet Highlands',
+                    'country' => 'Gazet Republic',
+                ],
                 'self' => false,
             ]);
         }
