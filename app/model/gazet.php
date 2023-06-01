@@ -1728,7 +1728,7 @@ trait Gazet
     private function getUserData(int $iduser)
     {
         return $this->db->request([
-            'query' => 'SELECT iduser as id,last_name,first_name,email,phone,avatar,theme,autocorrect,capitalize FROM user WHERE iduser = ? LIMIT 1;',
+            'query' => 'SELECT iduser as id,last_name,first_name,birthdate,email,phone,avatar,theme,autocorrect,capitalize FROM user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
