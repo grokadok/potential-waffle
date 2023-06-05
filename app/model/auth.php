@@ -70,6 +70,12 @@ trait Auth
                 'array' => true,
             ])[0][0];
 
+            $this->db->request([
+                'query' => 'INSERT INTO new_user VALUES (?);',
+                'type' => 'i',
+                'content' => [$iduser],
+            ]);
+
             if (!empty($options['avatar'])) {
                 $avatar = getFileContentAndExtension($options['avatar']);
                 if ($avatar) {

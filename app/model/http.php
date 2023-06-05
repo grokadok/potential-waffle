@@ -62,7 +62,7 @@ trait Http
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
                         // DEV: TEST PROTOCOL FOR NEW USERS //
-                        $this->testerProcess($iduser);
+                        // $this->testerProcess($iduser);
                     }
                 }
 
@@ -78,9 +78,8 @@ trait Http
                     'recipient' => $this->userIsRecipient($iduser),
                     'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
-                    'user' => ['id' => $iduser, ...$userData],
+                    'user' => ['id' => $iduser, 'new' => $this->userIsNew($iduser), ...$userData],
                 ];
-                // var_dump($responseContent);
             }
 
             /////////////////////////////////////////////////////

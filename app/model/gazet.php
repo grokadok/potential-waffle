@@ -3381,6 +3381,11 @@ trait Gazet
             'type' => $type . 'i',
             'content' => [...$content, $iduser],
         ]);
+        if ($parameters['new']) $this->db->request([
+            'query' => 'DELETE FROM new_user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
         return $this->getUserData($iduser);
     }
 
@@ -3568,6 +3573,15 @@ trait Gazet
             'query' => 'SELECT NULL FROM family_has_member WHERE iduser = ? AND idfamily = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
+        ]));
+    }
+
+    private function userIsNew(int $iduser)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM new_user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
         ]));
     }
 
