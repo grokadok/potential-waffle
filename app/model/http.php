@@ -62,7 +62,7 @@ trait Http
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
                         // DEV: TEST PROTOCOL FOR NEW USERS //
-                        // $this->testerProcess($iduser);
+                        $this->testerProcess($iduser);
                     }
                 }
 
@@ -151,8 +151,6 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 10) {
-                print('@@@ create recipient' . PHP_EOL);
-                var_dump($post['r']);
                 $responseContent = ['f' => 10, 'created' => $this->userCreateRecipient($iduser, $post['i'], $post['r'])];
             }
 
@@ -193,7 +191,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 15) {
-                $responseContent = ['f' => 15, 'uploaded' => $this->updateUserAvatar($iduser, $post['k'])];
+                $responseContent = ['f' => 15, 'uploaded' => $this->userUpdateUserAvatar($iduser, $post['u'], $post['k'])];
             }
 
             /////////////////////////////////////////////////////
@@ -273,7 +271,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 25) {
-                $responseContent = ['f' => 25, 'removed' => $this->removeUserAvatar($iduser)];
+                $responseContent = ['f' => 25, 'removed' => $this->userRemoveUserAvatar($iduser, $post['i'], $post['u'])];
             }
 
             /////////////////////////////////////////////////////

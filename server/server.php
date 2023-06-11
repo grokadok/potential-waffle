@@ -346,6 +346,7 @@ class FWServer
             // var_dump(empty($test));
         } else print('!!!! No db connection. !!!!' . PHP_EOL);
     }
+
     public function onWorkStart($serv, $worker_id)
     {
         echo "#### Worker#$worker_id started ####" . PHP_EOL;

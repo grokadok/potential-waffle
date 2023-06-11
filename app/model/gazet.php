@@ -21,6 +21,32 @@ trait Gazet
         return true;
     }
 
+    /**
+     * Check if provided avatar is linked to any user.
+     * @return bool
+     */
+    private function checkAvatarUserLink(int $idobject)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM user WHERE avatar = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+        ]));
+    }
+
+    /**
+     * Check if provided avatar is linked to any recipient.
+     * @return bool
+     */
+    private function checkAvatarRecipientLink(int $idobject)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM recipient WHERE avatar = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+        ]));
+    }
+
     private function checkFamilyCodeAvailability(string $code)
     {
         return empty($this->db->request([
@@ -227,11 +253,18 @@ trait Gazet
         $values = '';
         $type = '';
         $content = [];
-        if (!empty($recipient['self'])) {
+        if (!empty($recipient['iduser'])) {
             $into = ',iduser';
             $values = ',?';
             $type = 'i';
-            $content = [$iduser];
+            $content = [$recipient['iduser']];
+            $userData = $this->db->request([
+                'query' => 'SELECT birthdate,avatar FROM user WHERE iduser = ? LIMIT 1;',
+                'type' => 'i',
+                'content' => [$recipient['iduser']],
+            ])[0];
+            $recipient['birthdate'] = $userData['birthdate'];
+            $recipient['avatar'] = $userData['avatar'];
         }
         if (!empty($recipient['avatar'])) {
             $into .= ',avatar';
@@ -246,13 +279,16 @@ trait Gazet
             'type' => 'issii' . $type,
             'content' => [$idfamily, $displayName, $recipient['birthdate'], $idaddress, $iduser, ...$content],
         ]);
-        $idrecipient = $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
+        $recipient = $this->db->request([
+            'query' => 'SELECT idrecipient,created FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $displayName],
-            'array' => true,
-        ])[0][0];
-        return $this->getRecipientData($idrecipient);
+        ])[0];
+
+        // update gazette
+        $this->setGazettes($idfamily, $recipient['created']);
+
+        return $this->getRecipientData($recipient['idrecipient']);
     }
 
     /**
@@ -334,17 +370,6 @@ trait Gazet
             'content' => [$idfamily],
         ]));
     }
-
-    /**
-     * Returns whether or not a family name is already used for a given user.
-     */
-    // private function familyExistsForUser(int $iduser, string $name)
-    // {
-    //     $families = $this->getUserFamilies($iduser);
-    //     $used = false;
-    //     foreach ($families as $family) if ($family['name'] === $name) $used = true;
-    //     return empty($families) ? false : $used;
-    // }
 
     /**
      * Returns true if family has at least one gazette.
@@ -2006,7 +2031,6 @@ trait Gazet
      */
     private function removeAddress(int $idaddress)
     {
-        print("remove id: " . $idaddress . PHP_EOL);
         if (!empty($this->db->request([
             'query' => 'SELECT NULL FROM recipient WHERE idaddress = ? LIMIT 1;',
             'type' => 'i',
@@ -2334,7 +2358,7 @@ trait Gazet
             'content' => [$idrecipient],
         ]);
         $this->removeAddress($data['idaddress']);
-        if (!empty($data['avatar'])) $this->removeAvatar($data['avatar']);
+        if (!empty($data['avatar'])) $this->removeRecipientAvatar($idrecipient);
         if (empty($data['iduser'])) $this->removeRecipientGazettes($idrecipient); // if no user linked, remove gazettes
         return true;
     }
@@ -2343,13 +2367,13 @@ trait Gazet
     {
         $idobject = $this->getRecipientAvatar($idrecipient);
         if (!$idobject) return true;
-        $this->removeS3Object($idobject);
+        if (!$this->checkAvatarUserLink($idobject)) $this->removeS3Object($idobject);
         $this->db->request([
             'query' => 'UPDATE recipient SET avatar = NULL WHERE idrecipient = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
-        return true;
+        return $idobject;
     }
 
     private function removeRecipientGazettes($idrecipient)
@@ -2439,13 +2463,19 @@ trait Gazet
     {
         $idobject = $this->getUserAvatar($iduser);
         if (!$idobject) return false;
+        // if (!$this->checkAvatarRecipientLink($idobject))
         $this->removeS3Object($idobject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = NULL WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ]);
-        return true;
+        $this->db->request([
+            'query' => 'UPDATE recipient SET avatar = NULL WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        return $idobject;
     }
 
     private function removeUserFamilySubscriptions(int $iduser, int $idfamily)
@@ -2863,6 +2893,12 @@ trait Gazet
         return $idobject = $this->getS3ObjectIdFromKey($object['binKey']);
     }
 
+    private function storeS3Object(int $iduser, string $key)
+    {
+        $newObject = $this->s3->move($key);
+        return $this->setS3Object($iduser, $newObject);
+    }
+
     private function testerProcess(int $iduser)
     {
         print('#### Tester process for user ' . $iduser . ' ####' . PHP_EOL);
@@ -3121,9 +3157,13 @@ trait Gazet
         }
     }
 
+    /**
+     * Update member's data and returns uppdated data.
+     * @return array
+     */
     private function updateMember(int $iduser, array $parameters)
     {
-        // TODO: finish updateMember
+        print('@@@ updateMember: ' . $iduser . PHP_EOL);
         var_dump($parameters);
         $response = [];
         // if user's data modifed
@@ -3133,18 +3173,28 @@ trait Gazet
             $response['user']['id'] = $parameters['user']['id'];
         }
         // if recipient's data modified
-        if (!empty($parameters['recipient']['id'])) {
-            $response['recipient'] = $this->updateRecipient($iduser, $parameters['recipient']['id'], $parameters['recipient']);
-            if (!$response['recipient']) {
-                print('updateMember: FALSE' . PHP_EOL);
-                return false;
+        if (!empty($parameters['recipient'])) {
+            // handle recipient's removal
+            // if (isset($parameters['recipient']['remove'])) {
+            //     $response['recipient'] = ['id' => $parameters['recipient']['remove'], 'removed' => $this->removeRecipient($iduser, $parameters['recipient']['remove'])];
+            // }
+            // create or update recipient
+            if ($parameters['recipient']['id'] == null)
+                $response['recipient'] = $this->createRecipient($iduser, $parameters['idfamily'], $parameters['recipient']);
+            else {
+                $response['recipient'] = $this->updateRecipient($iduser, $parameters['recipient']['id'], $parameters['recipient']);
+                if (!$response['recipient']) {
+                    print('updateMember: FALSE' . PHP_EOL);
+                    return false;
+                }
+            }
+        } else if (!empty($parameters['idfamily'])) {
+            $recipientId = $this->userIsRecipientOfFamily($iduser, $parameters['idfamily']);
+            if ($recipientId) {
+                $response['recipient'] = $this->getRecipientData($recipientId);
             }
         }
-        // if recipient's address modified
-        // if (!empty($parameters['recipient']['address'])) {
-        //     // update address
-        //     $response['recipient']['address'] = $this->updateRecipientAddress($iduser, $parameters['recipient']['id'], $parameters['recipient']['address']);
-        // }
+        print('@@@ updateMember response: ' . $iduser . PHP_EOL);
         var_dump($response);
         return $response;
     }
@@ -3399,14 +3449,14 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idobject, $iduser],
         ]);
+        $this->db->request([
+            'query' => 'UPDATE recipient SET avatar = ? WHERE iduser = ?;',
+            'type' => 'ii',
+            'content' => [$idobject, $iduser],
+            'array' => true,
+        ]);
         if ($oldObject) $this->removeS3Object($oldObject);
         return $idobject;
-    }
-
-    private function storeS3Object(int $iduser, string $key)
-    {
-        $newObject = $this->s3->move($key);
-        return $this->setS3Object($iduser, $newObject);
     }
 
     private function updateUserEmail(int $iduser, string $email)
@@ -3668,8 +3718,15 @@ trait Gazet
     private function userRemovesRecipientAvatar(int $iduser, int $idfamily, int $idrecipient)
     {
         if (!$this->userIsReferent($iduser, $idrecipient) && !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
-        $this->removeRecipientAvatar($idrecipient);
-        return true;
+        $idobject = $this->removeRecipientAvatar($idrecipient);
+        return $idobject;
+    }
+
+    private function userRemoveUserAvatar(int $iduser, int $idfamily, int $idAvatarUser)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idAvatarUser) return false;
+        $idobject = $this->removeUserAvatar($idAvatarUser);
+        return $idobject;
     }
 
     private function userSetComment(int $iduser, int $idfamily, int $idpublication, string $comment)
@@ -3742,6 +3799,13 @@ trait Gazet
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $parameters['idpublication'])) return false;
         $this->updatePublication($parameters['idpublication'], $parameters);
         return true;
+    }
+
+    private function userUpdateUserAvatar(int $iduser, int $idUserAvatar, string $key)
+    {
+        if ($iduser !== $idUserAvatar) return false;
+        $idobject = $this->updateUserAvatar($iduser, $key);
+        return $idobject;
     }
 
     private function userUseFamilyCode(int $iduser, string $code)
