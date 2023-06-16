@@ -2463,7 +2463,6 @@ trait Gazet
     {
         $idobject = $this->getUserAvatar($iduser);
         if (!$idobject) return false;
-        // if (!$this->checkAvatarRecipientLink($idobject))
         $this->removeS3Object($idobject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = NULL WHERE iduser = ? LIMIT 1;',
@@ -3492,6 +3491,15 @@ trait Gazet
         return $iduser === $object['owner'] || $this->usersHaveCommonFamily($iduser, $object['owner']);
     }
 
+    private function userFCMExist(int $iduser, string $token)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM user_has_fcm_token WHERE iduser = ? AND token = ? LIMIT 1;',
+            'type' => 'is',
+            'content' => [$iduser, $token],
+        ]));
+    }
+
     private function userCreateRecipient(int $iduser, int $idfamily, array $recipient)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
@@ -3791,6 +3799,21 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $parameters['idcomment'])) return false;
         $this->updateComment($parameters['idcomment'], $parameters['content']);
+        return true;
+    }
+
+    private function userUpdateFCMToken(int $iduser, string $token)
+    {
+        $this->userFCMExist($iduser, $token) ? $this->db->request([
+            'query' => 'UPDATE user_has_fcm_token SET modified = CURRENT_TIMESTAMP() WHERE iduser = ? AND token = ? LIMIT 1;',
+            'type' => 'is',
+            'content' => [$iduser, $token],
+        ]) :
+            $this->db->request([
+                'query' => 'INSERT INTO user_has_fcm_token (iduser,token) VALUES (?,?);',
+                'type' => 'is',
+                'content' => [$iduser, $token],
+            ]);
         return true;
     }
 

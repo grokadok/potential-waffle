@@ -20,7 +20,6 @@ foreach ([
     $jwt_signature,
 ] as $value) {
     require_once $value;
-    unset($value);
 };
 
 use Error;

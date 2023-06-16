@@ -1,4 +1,4 @@
-FROM phpswoole/swoole:php8.1
+FROM phpswoole/swoole:php8.2
 # ENV AUTORELOAD_PROGRAMS: "swoole"
 # ENV AUTORELOAD_ANY_FILES: 0
 # ENV MYSQL_ADDON_HOST: "mysql"

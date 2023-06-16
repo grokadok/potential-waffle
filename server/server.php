@@ -8,6 +8,7 @@ $http = __DIR__ . '/app/model/http.php';
 $websocket = __DIR__ . '/app/model/websocket.php';
 // $login = __DIR__ . '/app/model/login.php';
 $auth = __DIR__ . '/app/model/auth.php';
+$messaging = __DIR__ . '/app/model/messaging.php';
 // $jwt_jwt = __DIR__ . '/app/jwt/JWT.php';
 // $jwt_jwk = __DIR__ . '/app/jwt/JWK.php';
 // $jwt_key = __DIR__ . '/app/jwt/Key.php';
@@ -28,6 +29,7 @@ foreach ([
     $websocket,
     // $login,
     $auth,
+    $messaging,
     // $chat,
     // $calendar,
     // $caldav,
@@ -41,7 +43,6 @@ foreach ([
     $s3,
 ] as $value) {
     require_once $value;
-    unset($value);
 };
 // require 'vendor/autoload.php';
 unset($dbrequest, $functions, $http, $websocket, $auth, $s3);
@@ -51,32 +52,28 @@ if (getenv('ISLOCAL')) {
 }
 
 
-use Swoole\Coroutine as Co;
-use Swoole\Table;
+// use Swoole\Coroutine as Co;
+// use Swoole\Table;
 use Swoole\WebSocket\Server;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
-// use Firebase\JWT\JWT;
-// use Firebase\JWT\Key;
 use bopdev\DBRequest;
+use bopdev\Messaging;
 use bopdev\S3Client;
-// use Aws\S3\S3Client as S3;
-// use Aws\Exception\AwsException;
 
 class FWServer
 {
     use Http;
     use Websocket;
-    // use Login;
     use Auth;
-    // use Tools;
 
     private $appname;
 
     public function __construct(
         private $db = new DBRequest(),
         private $s3 = new S3Client(),
+        private $messaging = new Messaging(),
         private $serv = new Server("0.0.0.0", 8080),
         // private $table = new Table(1024),
     ) {

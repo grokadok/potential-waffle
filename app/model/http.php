@@ -436,11 +436,39 @@ trait Http
             }
 
 
+            /////////////////////////////////////////////////////
+            // UPDATE DEVICE TOKEN (48)
+            /////////////////////////////////////////////////////
+
+            if ($f === 48) {
+                $responseContent = ['f' => 48, 'updated' => $this->userUpdateFCMToken($iduser, $post['t'])];
+            }
+
+
+
+
 
 
 
             /////////////////////////////////////////////////////
-            // CLEAN S3 FROM UNUSED ITEMS (998)
+            // SEND TEST NOTIFICATION (996)
+            /////////////////////////////////////////////////////
+
+            if ($f === 996) {
+                $tokens = $this->db->request([
+                    'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser = ?;',
+                    'type' => 'i',
+                    'content' => [$iduser],
+                    'array' => true,
+                ]);
+                foreach ($tokens as &$token) {
+                    $token = $token[0];
+                }
+                $responseContent = ['f' => 996, 'sent' => $this->messaging->testMessage($tokens)];
+            }
+
+            /////////////////////////////////////////////////////
+            // CLEAN S3 FROM UNUSED ITEMS (997)
             /////////////////////////////////////////////////////
 
             if ($f === 997) {
