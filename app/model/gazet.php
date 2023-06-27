@@ -603,6 +603,73 @@ trait Gazet
     }
 
     /**
+     * Fills given gazette with games for a given recipient.
+     * @param int $idgazette
+     * @param int $idrecipient
+     */
+    private function fillGazetteWithGames(int $idgazette, int $idrecipient)
+    {
+        // get gazette pages according to type
+        $pageCount = $this->getGazetteTypeData($this->getGazetteType($idgazette));
+        // get last page publication
+        $lastPage = $this->db->request([
+            'query' => 'SELECT MAX(page_num) as page,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND (idrecipient IS NULL OR idrecipient = ?) LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idgazette, $idrecipient],
+        ]);
+        $lastPageFull = $lastPage['place'] === 2 || (
+            ($lastPage['idpublication'] !== null && $this->getPublicationSize($lastPage['idpublication']) ||
+                ($lastPage['idgame'] !== null && $this->getGameSize($lastPage['idgame'])) ||
+                $lastPage['idsong'] !== null
+            ));
+
+        if (empty($lastPage) || $lastPage['page'] === $pageCount && $lastPageFull) return false;
+        // count empty half pages
+        $emptyHalfPages = ($pageCount - $lastPage['page']) * 2 + ($lastPageFull ? 0 : 1);
+
+        // fill with games according to recipient's excluded game types and already printed games (common games)
+        $games = $this->getRecipientFillGames($idrecipient, $emptyHalfPages);
+        // prepare query to insert games
+        $nextPage = $lastPage['page'] + $lastPageFull ? 1 : 0;
+        $nextPlace = $lastPageFull ? 1 : 2;
+        $gamesQuery = [];
+        while ($nextPage <= $pageCount) {
+            if (empty($games)) break;
+            if ($nextPlace === 2) {
+                // insert next half page game
+                $gameIndex = 0;
+                while ($games[$gameIndex]['full_size'] === 1) $gameIndex++;
+                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $games[$gameIndex]['idgame'] . ')';
+                // pop game from game array
+                array_splice($games, $gameIndex, 1);
+                $nextPlace = 1;
+                $nextPage++;
+            } else {
+                // insert next game
+                $game = array_shift($games);
+                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $game['idgame'] . ')';
+                $nextPlace = $game['full_page'] === 1 ? 1 : 2;
+                if ($game['full_page'] === 1) $nextPage++;
+            }
+        }
+        $gamesQuery = implode(',', $gamesQuery);
+        // insert games
+        $this->db->request([
+            'query' => 'INSERT INTO gazette_page (page_num,place,idgame) VALUES ' . $gamesQuery . ';',
+        ]);
+
+        // TODO: if remaining empty page, fill it with a placeholder
+
+
+        // TODO: set fill limit ? (else gazette could be full of games and it'll be harder to provide enough games to avoid duplicates)
+        // TODO: get games size, all half-page ? all full-page ? if so, empty space if last publication page not full.
+        // TODO: get song sizes, assuming all will be full-page.
+        // TODO: discuss game types, will there be some in db or not.
+
+        return true;
+    }
+
+    /**
      * Returns all publications id for given family, false if none.
      * @return array|false
      */
@@ -656,6 +723,16 @@ trait Gazet
     {
         return $this->db->request([
             'query' => 'SELECT COUNT(*) FROM comment_has_like WHERE idcomment = ?;',
+            'type' => 'i',
+            'content' => [$idcomment],
+            'array' => true,
+        ])[0][0];
+    }
+
+    private function getCommentsAuthor(int $idcomment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT iduser FROM comment WHERE idcomment = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idcomment],
             'array' => true,
@@ -761,10 +838,15 @@ trait Gazet
         return $memberData;
     }
 
-    private function getFamilyMembers(int $idfamily)
+    private function getFamilyMembers(int $idfamily, array $exclude = [])
     {
+        $where = '';
+        if (!empty($exclude)) {
+            $exclude = implode(',', $exclude);
+            $where = ' AND iduser NOT IN (' . $exclude . ')';
+        }
         $members = $this->db->request([
-            'query' => 'SELECT iduser FROM family_has_member WHERE idfamily = ?;',
+            'query' => 'SELECT iduser FROM family_has_member WHERE idfamily = ?' . $where . ';',
             'type' => 'i',
             'content' => [$idfamily],
             'array' => true,
@@ -841,7 +923,6 @@ trait Gazet
             // get text
             if (empty($publication['text']))
                 $publication['text'] = $this->getPublicationText($publication['idpublication']);
-            // $publication['author'] = $this->getUserName($publication['author']); // users info already in app
         }
         return $publications;
     }
@@ -1187,6 +1268,16 @@ trait Gazet
             $date->modify('first day of this month')->modify('+27 days');
         } else $date->modify('first day of next month')->modify('+27 days');
         return $date->format('Y-m-d');
+    }
+
+    private function getPublicationsAuthor(int $idpublication)
+    {
+        return $this->db->request([
+            'query' => 'SELECT author FROM publication WHERE idpublication = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ])[0][0];
     }
 
     private function getPublicationCommentsCount(int $idpublication)
@@ -1702,6 +1793,34 @@ trait Gazet
         ]);
     }
 
+    private function getUnseen(int $iduser)
+    {
+        $publications = $this->db->request([
+            'query' => 'SELECT idpublication FROM unseen_publication WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ]);
+        foreach ($publications as &$publication) $publication = $publication[0];
+        $comments = $this->db->request([
+            'query' => 'SELECT idcomment FROM unseen_comment WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ]);
+        foreach ($comments as &$comment) $comment = $comment[0];
+        $members = $this->db->request([
+            'query' => 'SELECT member,idfamily FROM unseen_member WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        return [
+            'publications' => $publications,
+            'comments' => $comments,
+            'members' => $members,
+        ];
+    }
+
     /**
      * Returns idobject of user's avatar
      * @return int|false Avatar's idobject or false
@@ -1960,6 +2079,15 @@ trait Gazet
         return $requests;
     }
 
+    private function getUsersTokens(array $users)
+    {
+        $users = implode(',', $users);
+        return $this->db->request([
+            'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser IN (' . $users . ');',
+            'array' => true,
+        ]);
+    }
+
     /**
      * Returns an array of subscriptions ids corresponding to given user & family.
      * @return int[]|false
@@ -2133,6 +2261,18 @@ trait Gazet
             'content' => [$idgazette],
         ]);
         return true;
+    }
+
+    /**
+     * Remove specific gazette modification
+     */
+    private function removeGazetteModification(int $idgazette, int $page_num, int $place)
+    {
+        $this->db->request([
+            'query' => 'DELETE FROM gazette_page WHERE idgazette = ? AND manual = 1 AND page_num = ? AND place = ? LIMIT 1;',
+            'type' => 'iii',
+            'content' => [$idgazette, $page_num, $place],
+        ]);
     }
 
     /**
@@ -2459,6 +2599,15 @@ trait Gazet
         ]);
     }
 
+    private function removeUnseenPublication(int $iduser, int $idpublication)
+    {
+        return $this->db->request([
+            'query' => 'DELETE FROM unseen_publication WHERE iduser = ? AND idpublication = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idpublication],
+        ]);
+    }
+
     private function removeUserAvatar($iduser)
     {
         $idobject = $this->getUserAvatar($iduser);
@@ -2520,43 +2669,104 @@ trait Gazet
         return true;
     }
 
+    private function sendData(array $users, array $data = [])
+    {
+        $tokens = $this->getUsersTokens($users);
+        return $this->messaging->sendData($tokens, $data);
+    }
+
+    private function sendNotification(array $users, string $title, string $message, array $data = [])
+    {
+        $tokens = $this->getUsersTokens($users);
+        return $this->messaging->sendNotification($tokens, $title, $message, $data);
+    }
+
     /**
      * Add comment to publication, returns updated publication comments.
      * @return array
      */
-    private function setComment(int $iduser, int $idpublication, string $comment)
+    private function setComment(int $iduser, int $idfamily, int $idpublication, string $comment)
     {
         $this->db->request([
             'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
             'type' => 'is',
             'content' => [$iduser, $comment],
         ]);
-        $idcomment = $this->db->request([
-            'query' => 'SELECT idcomment FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
+        $comment = $this->db->request([
+            'query' => 'SELECT idcomment,created FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
             'type' => 'is',
             'content' => [$iduser, $comment],
-            'array' => true,
-        ])[0][0];
+        ])[0];
         $this->db->request([
             'query' => 'INSERT INTO publication_has_comment (idpublication,idcomment) VALUES (?,?);',
             'type' => 'ii',
-            'content' => [$idpublication, $idcomment],
+            'content' => [$idpublication, $comment['idcomment']],
         ]);
+        $author = $this->getPublicationsAuthor($idpublication);
+        $members = $this->getFamilyMembers($idfamily, [$iduser, $author]);
+        if (!empty($members)) {
+            foreach ($members as &$member) $member = $member[0];
+            $this->setUnseenComment([$author, ...$members], $comment['idcomment']);
+            $title = 'Nouveau commentaire';
+            $data = [
+                'date' => $comment['created'],
+                'family' => $idfamily,
+                'idcomment' => $comment['idcomment'],
+                'idpublication' => $idpublication,
+                'type' => 'comment',
+            ];
+            $this->sendNotification(
+                $members,
+                $title,
+                $this->getUserName($iduser)['first_name'] . ' a commenté une publication',
+                $data,
+            );
+        }
+        $this->sendNotification(
+            [$author],
+            $title,
+            $this->getUserName($iduser)['first_name'] . ' a commenté votre publication',
+            $data,
+        );
+        return $comment['idcomment'];
     }
 
-    private function setCommentLike(int $iduser, int $idcomment)
+    private function setCommentLike(int $iduser, int $idfamily, int $idcomment)
     {
         $like = $this->userLikesComment($iduser, $idcomment);
-        if ($like) $this->db->request([
-            'query' => 'DELETE FROM comment_has_like WHERE iduser = ? AND idcomment = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idcomment],
-        ]);
-        else $this->db->request([
-            'query' => 'INSERT INTO comment_has_like (idcomment,iduser) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$idcomment, $iduser],
-        ]);
+        $exclude = [$iduser];
+        $data = [
+            'idcomment' => $idcomment,
+            'iduser' => $iduser,
+            'type' => 'commentlike',
+            'value' => !$like,
+        ];
+        if ($like)
+            $this->db->request([
+                'query' => 'DELETE FROM comment_has_like WHERE iduser = ? AND idcomment = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$iduser, $idcomment],
+            ]);
+        else {
+            $this->db->request([
+                'query' => 'INSERT INTO comment_has_like (idcomment,iduser) VALUES (?,?);',
+                'type' => 'ii',
+                'content' => [$idcomment, $iduser],
+            ]);
+            // TODO: send notification to comment author
+            $author = $this->getCommentsAuthor($idcomment);
+            $exclude[] = $author;
+            $title = 'Nouveau like';
+            $this->sendNotification(
+                [$author],
+                $title,
+                $this->getUserName($iduser)['first_name'] . ' a aimé votre commentaire',
+                $data,
+            );
+        }
+        // TODO: send data to family members except user (and author if like)
+        $members = $this->getFamilyMembers($idfamily, $exclude);
+        if (!empty($members)) $this->sendData($members, $data);
         return ['liked' => !$like, 'likes' => $this->getCommentLikesCount($idcomment)];
     }
 
@@ -2577,85 +2787,6 @@ trait Gazet
             'content' => [$idfamily, $iduser],
         ]);
         return $previous;
-    }
-
-    /**
-     * Remove specific gazette modification
-     */
-    private function removeGazetteModification(int $idgazette, int $page_num, int $place)
-    {
-        $this->db->request([
-            'query' => 'DELETE FROM gazette_page WHERE idgazette = ? AND manual = 1 AND page_num = ? AND place = ? LIMIT 1;',
-            'type' => 'iii',
-            'content' => [$idgazette, $page_num, $place],
-        ]);
-    }
-
-    /**
-     * Fills given gazette with games for a given recipient.
-     * @param int $idgazette
-     * @param int $idrecipient
-     */
-    private function fillGazetteWithGames(int $idgazette, int $idrecipient)
-    {
-        // get gazette pages according to type
-        $pageCount = $this->getGazetteTypeData($this->getGazetteType($idgazette));
-        // get last page publication
-        $lastPage = $this->db->request([
-            'query' => 'SELECT MAX(page_num) as page,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND (idrecipient IS NULL OR idrecipient = ?) LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$idgazette, $idrecipient],
-        ]);
-        $lastPageFull = $lastPage['place'] === 2 || (
-            ($lastPage['idpublication'] !== null && $this->getPublicationSize($lastPage['idpublication']) ||
-                ($lastPage['idgame'] !== null && $this->getGameSize($lastPage['idgame'])) ||
-                $lastPage['idsong'] !== null
-            ));
-
-        if (empty($lastPage) || $lastPage['page'] === $pageCount && $lastPageFull) return false;
-        // count empty half pages
-        $emptyHalfPages = ($pageCount - $lastPage['page']) * 2 + ($lastPageFull ? 0 : 1);
-
-        // fill with games according to recipient's excluded game types and already printed games (common games)
-        $games = $this->getRecipientFillGames($idrecipient, $emptyHalfPages);
-        // prepare query to insert games
-        $nextPage = $lastPage['page'] + $lastPageFull ? 1 : 0;
-        $nextPlace = $lastPageFull ? 1 : 2;
-        $gamesQuery = [];
-        while ($nextPage <= $pageCount) {
-            if (empty($games)) break;
-            if ($nextPlace === 2) {
-                // insert next half page game
-                $gameIndex = 0;
-                while ($games[$gameIndex]['full_size'] === 1) $gameIndex++;
-                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $games[$gameIndex]['idgame'] . ')';
-                // pop game from game array
-                array_splice($games, $gameIndex, 1);
-                $nextPlace = 1;
-                $nextPage++;
-            } else {
-                // insert next game
-                $game = array_shift($games);
-                $gamesQuery[] = '(' . $nextPage . ',' . $nextPlace . ',' . $game['idgame'] . ')';
-                $nextPlace = $game['full_page'] === 1 ? 1 : 2;
-                if ($game['full_page'] === 1) $nextPage++;
-            }
-        }
-        $gamesQuery = implode(',', $gamesQuery);
-        // insert games
-        $this->db->request([
-            'query' => 'INSERT INTO gazette_page (page_num,place,idgame) VALUES ' . $gamesQuery . ';',
-        ]);
-
-        // TODO: if remaining empty page, fill it with a placeholder
-
-
-        // TODO: set fill limit ? (else gazette could be full of games and it'll be harder to provide enough games to avoid duplicates)
-        // TODO: get games size, all half-page ? all full-page ? if so, empty space if last publication page not full.
-        // TODO: get song sizes, assuming all will be full-page.
-        // TODO: discuss game types, will there be some in db or not.
-
-        return true;
     }
 
     /**
@@ -2803,22 +2934,61 @@ trait Gazet
                 'query' => 'INSERT INTO recipient_has_publication (idrecipient,idpublication) VALUES ' . $insert . ';',
             ]);
         }
+        $members = $this->getFamilyMembers($idfamily, [$iduser]);
+        if (!empty($members)) {
+            foreach ($members as &$member) $member = $member[0];
+            $this->setUnseenPublication($members, $publication['idpublication']);
+            $this->sendNotification(
+                $members,
+                'Nouvelle publication',
+                $this->getUserName($iduser)['first_name'] . ' a ajouté une publication',
+                [
+                    'date' => $publication['created'],
+                    'family' => $idfamily,
+                    'idpublication' => $publication['idpublication'],
+                    'type' => 'publication',
+                ]
+            );
+        }
+
         return $publication['idpublication'];
     }
 
-    private function setPublicationLike(int $iduser, int $idpublication)
+    private function setPublicationLike(int $iduser, int $idfamily, int $idpublication)
     {
         $like = $this->userLikesPublication($iduser, $idpublication);
-        if ($like) $this->db->request([
-            'query' => 'DELETE FROM publication_has_like WHERE iduser = ? AND idpublication = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idpublication],
-        ]);
-        else $this->db->request([
-            'query' => 'INSERT INTO publication_has_like (idpublication,iduser) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$idpublication, $iduser],
-        ]);
+        $exclude = [$iduser];
+        $data = [
+            'date' => $this->getPublicationDate($idpublication),
+            'family' => $this->getPublicationFamily($idpublication),
+            'idpublication' => $idpublication,
+            'type' => 'publicationlike',
+            'value' => !$like,
+        ];
+        if ($like)
+            $this->db->request([
+                'query' => 'DELETE FROM publication_has_like WHERE iduser = ? AND idpublication = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$iduser, $idpublication],
+            ]);
+        else {
+            $this->db->request([
+                'query' => 'INSERT INTO publication_has_like (idpublication,iduser) VALUES (?,?);',
+                'type' => 'ii',
+                'content' => [$idpublication, $iduser],
+            ]);
+            $author = $this->getPublicationsAuthor($idpublication);
+            $exclude[] = $author;
+            $this->sendNotification(
+                [$author],
+                'Nouveau like',
+                $this->getUserName($iduser)['first_name'] . ' a aimé votre publication',
+                $data,
+            );
+        }
+        $members = $this->getFamilyMembers($idfamily, $exclude);
+        if (!empty($members))
+            $this->sendData($members, $data);
         return ['liked' => !$like, 'likes' => $this->getPublicationLikesCount($idpublication)];
     }
 
@@ -2890,6 +3060,24 @@ trait Gazet
             'content' => [$object['binKey'], $object['ext'], $iduser],
         ]);
         return $idobject = $this->getS3ObjectIdFromKey($object['binKey']);
+    }
+
+    private function setUnseenComment(array $users, int $idcomment)
+    {
+        $values = '';
+        foreach ($users as $user) $values .= '(' . $user . ',' . $idcomment . '),';
+        return $this->db->request([
+            'query' => 'INSERT INTO unseen_comment (iduser,idcomment) VALUES ' . $values . ';',
+        ]);
+    }
+
+    private function setUnseenPublication(array $users, int $idpublication)
+    {
+        $values = '';
+        foreach ($users as $user) $values .= '(' . $user . ',' . $idpublication . '),';
+        return $this->db->request([
+            'query' => 'INSERT INTO unseen_publication (iduser,idpublication) VALUES ' . $values . ';',
+        ]);
     }
 
     private function storeS3Object(int $iduser, string $key)
@@ -3740,14 +3928,14 @@ trait Gazet
     private function userSetComment(int $iduser, int $idfamily, int $idpublication, string $comment)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
-        $this->setComment($iduser, $idpublication, $comment);
+        $this->setComment($iduser, $idfamily, $idpublication, $comment);
         return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
     }
 
     private function userSetCommentLike(int $iduser, int $idfamily, int $idcomment)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsCommentsAuthor($iduser, $idcomment)) return false;
-        return $this->setCommentLike($iduser, $idcomment);
+        return $this->setCommentLike($iduser, $idfamily, $idcomment);
     }
 
     private function userSetPublication(int $iduser, int  $idfamily, array $parameters)
@@ -3760,7 +3948,7 @@ trait Gazet
     private function userSetPublicationLike(int $iduser, int $idfamily, int $idpublication)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
-        return $this->setPublicationLike($iduser, $idpublication);
+        return $this->setPublicationLike($iduser, $idfamily, $idpublication);
     }
 
     private function userToggleAutocorrect(int $iduser)

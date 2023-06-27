@@ -78,6 +78,7 @@ trait Http
                     'recipient' => $this->userIsRecipient($iduser),
                     'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
+                    'unseen' => $this->getUnseen($iduser),
                     'user' => ['id' => $iduser, 'new' => $this->userIsNew($iduser), ...$userData],
                 ];
             }
@@ -297,7 +298,6 @@ trait Http
             if ($f === 28) {
                 $responseContent = ['f' => 28, 'denied' => $this->familyRequestRefuse($iduser, $post['r'], $post['i'])];
             }
-
 
             /////////////////////////////////////////////////////
             // GET FAMILY DATA (31)

@@ -29,15 +29,62 @@ class Messaging
         // var_dump($serviceAccount);
         // print('### END DECODED FIREBASE_SERVICE_ACCOUNT' . PHP_EOL);
 
-        // $this->factory = (new Factory)->withServiceAccount(__DIR__ . '/../../config/firebase.json');
         $this->factory = (new Factory)->withServiceAccount($serviceAccount);
+        // $this->factory = (new Factory)->withServiceAccount(__DIR__ . '/../../config/firebase.json');
+    }
 
-        $this->messaging = $this->factory->createMessaging();
+    public function sendNotification(array $tokens, string $title, string $body, array $data)
+    {
+        try {
+            $this->messaging = $this->factory->createMessaging();
+            if (empty($tokens)) {
+                throw new Error('Empty tokens');
+            }
+
+            foreach ($tokens as $token) {
+                $message = CloudMessage::fromArray([
+                    'token' => $token,
+                    'notification' => Notification::create($title, $body), // optional
+                    'data' => $data ?? null, // optional
+                ]);
+                $response = $this->messaging->send($message);
+                // print('### MESSAGE RESPONSE' . PHP_EOL);
+                // var_dump($response);
+            }
+        } catch (Error $error) {
+            print('### ERROR' . PHP_EOL);
+            // var_dump($error);
+        }
+    }
+
+    public function sendData(array $tokens, array $data)
+    {
+        try {
+            $this->messaging = $this->factory->createMessaging();
+            if (empty($tokens)) {
+                throw new Error('Empty tokens');
+            }
+
+            foreach ($tokens as $token) {
+                $message = CloudMessage::fromArray([
+                    'token' => $token,
+                    'data' => $data ?? null, // optional
+                ]);
+                $response = $this->messaging->send($message);
+                // print('### MESSAGE RESPONSE' . PHP_EOL);
+                // var_dump($response);
+            }
+        } catch (Error $error) {
+            print('### ERROR' . PHP_EOL);
+            // var_dump($error);
+        }
     }
 
     public function testMessage($tokens)
     {
         try {
+
+            $this->messaging = $this->factory->createMessaging();
             if (empty($tokens)) {
                 throw new Error('Empty tokens');
             }
@@ -87,32 +134,6 @@ class Messaging
             // } else {
             //     // echo 'Error sending message: ' . $response->error()->getMessage();
             // }
-
-
-            // CURL VERSION
-            // print('@@@ Sending message using curl' . PHP_EOL);
-            // $serverKey = $serviceAccount['private_key'];
-            // $message = array(
-            //     'to' => $testDeviceToken,
-            //     'notification' => array(
-            //         'title' => 'Title',
-            //         'body' => 'Body'
-            //     )
-            // );
-
-            // $ch = curl_init('https://fcm.googleapis.com/fcm/send');
-            // curl_setopt($ch, CURLOPT_POST, true);
-            // curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            // curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            //     'Authorization: key=' . $serverKey,
-            //     'Content-Type: application/json'
-            // ));
-            // curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            // curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($message));
-            // $response = curl_exec($ch);
-            // curl_close($ch);
-            // print('### MESSAGE RESPONSE' . PHP_EOL);
-            // var_dump($response);
         } catch (Error $error) {
             print('### ERROR' . PHP_EOL);
             // var_dump($error);
