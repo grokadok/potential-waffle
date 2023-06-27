@@ -62,7 +62,7 @@ trait Http
                         ]);
                         $this->updateUserEmailInvitation($iduser, $emailFinal);
                         // DEV: TEST PROTOCOL FOR NEW USERS //
-                        $this->testerProcess($iduser);
+                        // $this->testerProcess($iduser);
                     }
                 }
 

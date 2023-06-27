@@ -324,23 +324,10 @@ class FWServer
         // var_dump($test);
         // print(PHP_EOL);
 
-
         // Using operation methods creates a command implicitly
         if ($this->db->test() === true) {
-            // $this->db->request([
-            //     "query" => "DELETE FROM session;", // where worker no longer exist or equal to this worker
-            // ]);
-            // $this->db->request([
-            //     "query" => "ALTER TABLE session AUTO_INCREMENT=1; ;",
-            // ]);
             print('#### Db connected. ####' . PHP_EOL);
-            if ($this->db->request(['query' => 'SELECT COUNT(iduser) FROM user;', 'array' => true])[0][0] === 0) $this->initDb();
-            // $test = $this->db->request([
-            //     'query' => 'SELECT NULL FROM user WHERE first_name = ? LIMIT 1;',
-            //     'type' => 's',
-            //     'content' => ['Dugenou'],
-            // ]);
-            // var_dump(empty($test));
+            // if ($this->db->request(['query' => 'SELECT COUNT(iduser) FROM user;', 'array' => true])[0][0] === 0) $this->initDb();
         } else print('!!!! No db connection. !!!!' . PHP_EOL);
     }
 
