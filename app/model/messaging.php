@@ -31,12 +31,13 @@ class Messaging
 
         $this->factory = (new Factory)->withServiceAccount($serviceAccount);
         // $this->factory = (new Factory)->withServiceAccount(__DIR__ . '/../../config/firebase.json');
+        $this->messaging = $this->factory->createMessaging();
     }
 
     public function sendNotification(array $tokens, string $title, string $body, array $data)
     {
         try {
-            $this->messaging = $this->factory->createMessaging();
+            // $this->messaging = $this->factory->createMessaging();
             if (empty($tokens)) {
                 throw new Error('Empty tokens');
             }
@@ -60,7 +61,7 @@ class Messaging
     public function sendData(array $tokens, array $data)
     {
         try {
-            $this->messaging = $this->factory->createMessaging();
+            // $this->messaging = $this->factory->createMessaging();
             if (empty($tokens)) {
                 throw new Error('Empty tokens');
             }
@@ -83,8 +84,7 @@ class Messaging
     public function testMessage($tokens)
     {
         try {
-
-            $this->messaging = $this->factory->createMessaging();
+            // $this->messaging = $this->factory->createMessaging();
             if (empty($tokens)) {
                 throw new Error('Empty tokens');
             }
