@@ -56,7 +56,7 @@ class Messaging
                     var_dump($response);
                 } catch (MessagingException $e) {
                     print('### MESSAGING EXCEPTION' . PHP_EOL);
-                    var_dump($e);
+                    // var_dump($e);
                 } catch (Error $error) {
                     print('### SEND ERROR' . PHP_EOL);
                     // var_dump($error);
