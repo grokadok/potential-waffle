@@ -2960,7 +2960,7 @@ trait Gazet
         $exclude = [$iduser];
         $data = [
             'date' => $this->getPublicationDate($idpublication),
-            'family' => $this->getPublicationFamily($idpublication),
+            'family' => $idfamily,
             'idpublication' => $idpublication,
             'type' => 'publicationlike',
             'value' => !$like,
