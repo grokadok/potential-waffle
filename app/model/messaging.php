@@ -6,6 +6,7 @@ require __DIR__ . '/../../vendor/autoload.php';
 
 use Error;
 use Kreait\Firebase\Factory;
+use Kreait\Firebase\Exception\MessagingException;
 use Kreait\Firebase\Messaging\CloudMessage;
 use Kreait\Firebase\Messaging\Notification;
 
@@ -50,8 +51,12 @@ class Messaging
                         'data' => $data ?? null, // optional
                     ]);
                     $response = $this->messaging->send($message);
+                    // $this->messaging->send($message);
                     print('### MESSAGE RESPONSE' . PHP_EOL);
-                    // var_dump($response);
+                    var_dump($response);
+                } catch (MessagingException $e) {
+                    print('### MESSAGING EXCEPTION' . PHP_EOL);
+                    var_dump($e);
                 } catch (Error $error) {
                     print('### SEND ERROR' . PHP_EOL);
                     // var_dump($error);
