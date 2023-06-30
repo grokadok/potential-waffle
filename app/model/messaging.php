@@ -43,18 +43,23 @@ class Messaging
             }
 
             foreach ($tokens as $token) {
-                $message = CloudMessage::fromArray([
-                    'token' => $token,
-                    'notification' => Notification::create($title, $body), // optional
-                    'data' => $data ?? null, // optional
-                ]);
-                $response = $this->messaging->send($message);
-                // print('### MESSAGE RESPONSE' . PHP_EOL);
-                // var_dump($response);
+                try {
+                    $message = CloudMessage::fromArray([
+                        'token' => $token,
+                        'notification' => Notification::create($title, $body), // optional
+                        'data' => $data ?? null, // optional
+                    ]);
+                    $response = $this->messaging->send($message);
+                    print('### MESSAGE RESPONSE' . PHP_EOL);
+                    // var_dump($response);
+                } catch (Error $error) {
+                    print('### SEND ERROR' . PHP_EOL);
+                    // var_dump($error);
+                }
             }
         } catch (Error $error) {
-            print('### ERROR' . PHP_EOL);
-            // var_dump($error);
+            print('### TOKEN ERROR' . PHP_EOL);
+            var_dump($error);
         }
     }
 

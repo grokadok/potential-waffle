@@ -1948,17 +1948,17 @@ trait Gazet
         if ($requests) foreach ($requests as $request) $families[$request]['request'] = true;
 
         $response = [];
-        foreach (array_keys($families) as $key) {
-            $families[$key]['id'] = $key;
-            $families[$key]['invitation'] = $families[$key]['invitation'] ?? false;
-            $families[$key]['code'] = bin2hex($this->getFamilyCode($key));
-            $families[$key]['admin'] = $families[$key]['admin'] ?? false;
-            $families[$key]['member'] = $families[$key]['member'] ?? false;
-            $families[$key]['name'] = $families[$key]['name'] ?? $this->getAvailableFamilyName($iduser, $key, $this->getFamilyName($key));
-            $families[$key]['recipient'] = $families[$key]['recipient'] ?? false;
-            $families[$key]['request'] = $families[$key]['request'] ?? false;
-            $families[$key]['default'] = $key === $default ? true : false;
-            $response[] = $families[$key];
+        foreach ($families as $idfamily => $family) {
+            $family['id'] = $idfamily;
+            $family['invitation'] = $family['invitation'] ?? false;
+            $family['code'] = bin2hex($this->getFamilyCode($idfamily));
+            $family['admin'] = $family['admin'] ?? false;
+            $family['member'] = $family['member'] ?? false;
+            $family['name'] = $family['name'] ?? $this->getAvailableFamilyName($iduser, $idfamily, $this->getFamilyName($idfamily));
+            $family['recipient'] = $family['recipient'] ?? false;
+            $family['request'] = $family['request'] ?? false;
+            $family['default'] = $idfamily === $default ? true : false;
+            $response[] = $family;
         }
         $names = array_column($response, 'name');
         array_multisort($names, SORT_ASC, $response);
@@ -2082,10 +2082,12 @@ trait Gazet
     private function getUsersTokens(array $users)
     {
         $users = implode(',', $users);
-        return $this->db->request([
+        $tokens = $this->db->request([
             'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser IN (' . $users . ');',
             'array' => true,
         ]);
+        foreach ($tokens as &$token) $token = $token[0];
+        return $tokens;
     }
 
     /**
@@ -2704,17 +2706,16 @@ trait Gazet
         ]);
         $author = $this->getPublicationsAuthor($idpublication);
         $members = $this->getFamilyMembers($idfamily, [$iduser, $author]);
+        $title = 'Nouveau commentaire';
+        $data = [
+            'date' => $comment['created'],
+            'family' => $idfamily,
+            'idcomment' => $comment['idcomment'],
+            'idpublication' => $idpublication,
+            'type' => 'comment',
+        ];
+        $this->setUnseenComment([$author, ...$members], $comment['idcomment']);
         if (!empty($members)) {
-            foreach ($members as &$member) $member = $member[0];
-            $this->setUnseenComment([$author, ...$members], $comment['idcomment']);
-            $title = 'Nouveau commentaire';
-            $data = [
-                'date' => $comment['created'],
-                'family' => $idfamily,
-                'idcomment' => $comment['idcomment'],
-                'idpublication' => $idpublication,
-                'type' => 'comment',
-            ];
             $this->sendNotification(
                 $members,
                 $title,
@@ -2936,7 +2937,6 @@ trait Gazet
         }
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($members)) {
-            foreach ($members as &$member) $member = $member[0];
             $this->setUnseenPublication($members, $publication['idpublication']);
             $this->sendNotification(
                 $members,
@@ -3064,8 +3064,9 @@ trait Gazet
 
     private function setUnseenComment(array $users, int $idcomment)
     {
-        $values = '';
-        foreach ($users as $user) $values .= '(' . $user . ',' . $idcomment . '),';
+        $values = [];
+        foreach ($users as $user) $values[] = '(' . $user . ',' . $idcomment . ')';
+        $values = implode(',', $values);
         return $this->db->request([
             'query' => 'INSERT INTO unseen_comment (iduser,idcomment) VALUES ' . $values . ';',
         ]);
@@ -3073,8 +3074,9 @@ trait Gazet
 
     private function setUnseenPublication(array $users, int $idpublication)
     {
-        $values = '';
-        foreach ($users as $user) $values .= '(' . $user . ',' . $idpublication . '),';
+        $values = [];
+        foreach ($users as $user) $values[] = '(' . $user . ',' . $idpublication . ')';
+        $values = implode(',', $values);
         return $this->db->request([
             'query' => 'INSERT INTO unseen_publication (iduser,idpublication) VALUES ' . $values . ';',
         ]);
