@@ -3681,14 +3681,14 @@ trait Gazet
         return $iduser === $object['owner'] || $this->usersHaveCommonFamily($iduser, $object['owner']);
     }
 
-    private function userFCMExist(int $iduser, string $token)
-    {
-        return !empty($this->db->request([
-            'query' => 'SELECT NULL FROM user_has_fcm_token WHERE iduser = ? AND token = ? LIMIT 1;',
-            'type' => 'is',
-            'content' => [$iduser, $token],
-        ]));
-    }
+    // private function userFCMExist(int $iduser, string $token)
+    // {
+    //     return !empty($this->db->request([
+    //         'query' => 'SELECT NULL FROM user_has_fcm_token WHERE iduser = ? AND token = ? LIMIT 1;',
+    //         'type' => 'is',
+    //         'content' => [$iduser, $token],
+    //     ]));
+    // }
 
     private function userCreateRecipient(int $iduser, int $idfamily, array $recipient)
     {
@@ -3994,16 +3994,33 @@ trait Gazet
 
     private function userUpdateFCMToken(int $iduser, string $token)
     {
-        $this->userFCMExist($iduser, $token) ? $this->db->request([
-            'query' => 'UPDATE user_has_fcm_token SET modified = CURRENT_TIMESTAMP() WHERE iduser = ? AND token = ? LIMIT 1;',
-            'type' => 'is',
-            'content' => [$iduser, $token],
-        ]) :
+        // if token already exists, update it with new user
+        $user = $this->db->request([
+            'query' => 'SELECT iduser FROM user_has_fcm_token WHERE token = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$token],
+            'array' => true,
+        ])[0][0] ?? false;
+        if (!$user) {
             $this->db->request([
                 'query' => 'INSERT INTO user_has_fcm_token (iduser,token) VALUES (?,?);',
                 'type' => 'is',
                 'content' => [$iduser, $token],
             ]);
+        } else if ($user !== $iduser) {
+            $this->db->request([
+                'query' => 'UPDATE user_has_fcm_token SET iduser = ? WHERE token = ?;',
+                'type' => 'is',
+                'content' => [$iduser, $token],
+            ]);
+        } else {
+            // if ($this->userFCMExist($iduser, $token))
+            $this->db->request([
+                'query' => 'UPDATE user_has_fcm_token SET modified = CURRENT_TIMESTAMP() WHERE iduser = ? AND token = ? LIMIT 1;',
+                'type' => 'is',
+                'content' => [$iduser, $token],
+            ]);
+        }
         return true;
     }
 
