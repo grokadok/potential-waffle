@@ -2601,6 +2601,15 @@ trait Gazet
         ]);
     }
 
+    private function removeFCMToken(string $token)
+    {
+        return $this->db->request([
+            'query' => 'DELETE FROM user_has_fcm_token WHERE token = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$token],
+        ]);
+    }
+
     private function removeUnseenPublication(int $iduser, int $idpublication)
     {
         return $this->db->request([
@@ -2674,13 +2683,19 @@ trait Gazet
     private function sendData(array $users, array $data = [])
     {
         $tokens = $this->getUsersTokens($users);
-        return $this->messaging->sendData($tokens, $data);
+        // TODO: handle invalid tokens
+        $response = $this->messaging->sendData($tokens, $data);
+        if (!empty($response)) foreach ($response as $token) $this->removeFCMToken($token);
+        return;
     }
 
     private function sendNotification(array $users, string $title, string $message, array $data = [])
     {
         $tokens = $this->getUsersTokens($users);
-        return $this->messaging->sendNotification($tokens, $title, $message, $data);
+        // TODO: handle invalid tokens
+        $response = $this->messaging->sendNotification($tokens, $title, $message, $data);
+        if (!empty($response)) foreach ($response as $token) $this->removeFCMToken($token);
+        return;
     }
 
     /**
