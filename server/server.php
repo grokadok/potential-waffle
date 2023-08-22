@@ -52,7 +52,7 @@ if (getenv('ISLOCAL')) {
 }
 
 
-// use Swoole\Coroutine as Co;
+use Swoole\Coroutine;
 // use Swoole\Table;
 use Swoole\WebSocket\Server;
 use Swoole\Http\Request;
@@ -61,23 +61,25 @@ use Swoole\WebSocket\Frame;
 use bopdev\DBRequest;
 use bopdev\Messaging;
 use bopdev\S3Client;
+use Throwable;
 
 class FWServer
 {
     use Http;
-    use Websocket;
+    // use Websocket;
     use Auth;
 
     private $appname;
+    private $messaging;
 
     public function __construct(
         private $db = new DBRequest(),
         private $s3 = new S3Client(),
-        private $messaging = new Messaging(),
         private $serv = new Server("0.0.0.0", 8080),
         // private $table = new Table(1024),
     ) {
         $this->appname = getenv('APP_NAME');
+        $this->messaging = new Messaging($this->serv);
         // $this->table->column("user", Table::TYPE_INT);
         // $this->table->column("session", Table::TYPE_INT);
         // $this->table->create();
@@ -85,6 +87,7 @@ class FWServer
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
             'worker_num' => 4, // Open 4 Worker Process
+            'task_worker_num' => 1, // Open 2 Task Worker Process
             'open_cpu_affinity' => true,
             // "open_http2_protocol" => true // not compatible with stateless, only dispatch_modes 2 & 4
             // 'max_request' => 4, // Each worker process max_request is set to 4 times
@@ -92,13 +95,17 @@ class FWServer
             // 'enable_static_handler' => true,
             // 'daemonize' => false, // daems (TRUE / FALSE)
         ]);
-        $this->serv->on("Start", [$this, "onStart"]);
-        $this->serv->on("WorkerStart", [$this, "onWorkStart"]);
-        $this->serv->on("ManagerStart", [$this, "onManagerStart"]);
-        $this->serv->on("Request", [$this, "onRequest"]);
-        $this->serv->on("Open", [$this, "onOpen"]);
-        $this->serv->on("Message", [$this, "onMessage"]);
         $this->serv->on("Close", [$this, "onClose"]);
+        $this->serv->on("Finish", [$this, "onFinish"]);
+        $this->serv->on("ManagerStart", [$this, "onManagerStart"]);
+        $this->serv->on("Message", [$this, "onMessage"]); // on websocket message
+        $this->serv->on("Open", [$this, "onOpen"]);
+        $this->serv->on('PipeMessage', [$this, 'onPipeMessage']); // on internal message
+        $this->serv->on("Request", [$this, "onRequest"]);
+        $this->serv->on("Start", [$this, "onStart"]);
+        $this->serv->on("Task", [$this, "onTask"]);
+        $this->serv->on("WorkerStart", [$this, "onWorkStart"]);
+
         // $this->serv->table = $this->table;
         $this->serv->start();
     }
@@ -170,6 +177,10 @@ class FWServer
         $closer = $reactorId < 0 ? "server" : "client";
         echo "{$closer} closed connection {$fd} from {$user["remote_ip"]}:{$user["remote_port"]}" .
             PHP_EOL;
+    }
+    public function onFinish($serv, $task_id, $data)
+    {
+        echo "AsyncTask[{$task_id}] finished.\n";
     }
     public function onManagerStart($serv)
     {
@@ -248,6 +259,26 @@ class FWServer
         $user = $server->getClientInfo($request->fd);
         echo "connection {$request->fd} open for {$user["remote_ip"]}:{$user["remote_port"]}" .
             PHP_EOL;
+    }
+    public function onPipeMessage(Server $serv, int $srcWorkerId, array $message)
+    {
+        try {
+            Coroutine\go(function () use ($message, $srcWorkerId) {
+                // print('### PIPE MESSAGE TO ' . $this->serv->getWorkerId() . ' FROM ' . $srcWorkerId . PHP_EOL);
+                // var_dump($message);
+                switch ($message['code']) {
+                    case 1:
+                        $this->removeInvalidTokens($message['data']);
+                        break;
+                    default:
+                        break;
+                }
+                // $serv->sendMessage($result, $srcWorkerId);
+            });
+        } catch (Throwable $e) {
+            print('### PIPE MESSAGE ERROR' . PHP_EOL);
+            print($e->getMessage());
+        }
     }
     public function onRequest(
         Request $request,
@@ -331,10 +362,57 @@ class FWServer
         } else print('!!!! No db connection. !!!!' . PHP_EOL);
     }
 
+    public function onTask($serv, $task_id, $srcWorkerId, $data)
+    {
+        try {
+            // echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
+            $response = isset($data['body']) ?
+                $this->messaging->sendNotification(
+                    $data['tokens'],
+                    $data["title"],
+                    $data["body"],
+                    $data["data"]
+                ) :
+                $this->messaging->sendData(
+                    $data['tokens'],
+                    $data["data"]
+                );
+            if (!empty($response)) {
+                $this->serv->sendMessage([
+                    'code' => 1,
+                    'data' => $response,
+                ], $srcWorkerId);
+            }
+            $serv->finish("AsyncTask[id={$task_id}] -> OK");
+        } catch (Throwable $e) {
+            print('### TASK ERROR' . PHP_EOL);
+            print($e->getMessage());
+            $serv->finish("AsyncTask[id={$task_id}] -> ERROR");
+        }
+    }
+
+    private function removeInvalidTokens($invalid)
+    {
+        foreach ($invalid as $token) {
+            $this->db->request([
+                'query' => 'DELETE FROM user_has_fcm_token WHERE token = ?;',
+                'type' => 's',
+                'content' => [$token],
+            ]);
+        }
+    }
+
     public function onWorkStart($serv, $worker_id)
     {
         echo "#### Worker#$worker_id started ####" . PHP_EOL;
         swoole_set_process_name("swoole_process_server_worker");
+        // $serv->on('PipeMessage', function (Server $serv, int $srcWorkerId, $message) {
+        //     // Process the message asynchronously
+        //     print($message);
+
+        //     // Send the result back to the worker
+        //     // $serv->sendMessage($result, $srcWorkerId);
+        // });
     }
 }
 

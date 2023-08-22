@@ -17,7 +17,38 @@ trait Gazet
             'type' => 'iis',
             'content' => [$idfamily, $iduser, $name],
         ]);
-        // TODO: send push to user added
+        $this->db->request([
+            'query' => 'INSERT INTO unseen_family (iduser, idfamily) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+        ]);
+        if (!$this->userHasDefaultFamily($iduser)) {
+            $this->db->request([
+                'query' => 'INSERT INTO default_family (iduser, idfamily) VALUES (?,?);',
+                'type' => 'ii',
+                'content' => [$iduser, $idfamily],
+            ]);
+        }
+
+        $familyName = $this->getFamilyName($idfamily);
+        $memberName = $this->getUserName($iduser);
+        $data = [
+            'member' => $iduser,
+            'family' => $idfamily,
+            'type' => 7,
+        ];
+        $this->sendNotification(
+            [$iduser],
+            'Nouvelle famille !',
+            'Vous avez rejoint la famille ' . $familyName . '.',
+            $data
+        );
+        $this->sendNotification(
+            $this->getFamilyMembers($idfamily, [$iduser]),
+            'Nouveau membre !',
+            $memberName['first_name'] . ' ' . $memberName['last_name'] . ' a rejoint la famille ' . $familyName . '.',
+            $data
+        );
         return true;
     }
 
@@ -216,39 +247,6 @@ trait Gazet
         // check if recipient with same display name exists
         $displayName = $this->getAvailableRecipientName($idfamily, $displayName);
 
-        // create address
-        $this->db->request([
-            'query' => 'INSERT INTO address (name,phone,field1,field2,field3,postal,city,state,country) VALUES (?,?,?,?,?,?,?,?,?);',
-            'type' => 'sssssssss',
-            'content' => [
-                $recipient['address']['name'],
-                $recipient['address']['phone'] ?? '',
-                $recipient['address']['field1'],
-                $recipient['address']['field2'] ?? '',
-                $recipient['address']['field3'] ?? '',
-                $recipient['address']['postal'],
-                $recipient['address']['city'],
-                $recipient['address']['state'],
-                $recipient['address']['country'],
-            ],
-        ]);
-        $idaddress = $this->db->request([
-            'query' => 'SELECT idaddress FROM address WHERE name = ? AND phone = ? AND field1 = ? AND field2 = ? AND field3 = ? AND postal = ? AND city = ? AND state = ? AND country = ? LIMIT 1;',
-            'type' => 'sssssssss',
-            'content' => [
-                $recipient['address']['name'],
-                $recipient['address']['phone'] ?? '',
-                $recipient['address']['field1'],
-                $recipient['address']['field2'] ?? '',
-                $recipient['address']['field3'] ?? '',
-                $recipient['address']['postal'],
-                $recipient['address']['city'],
-                $recipient['address']['state'],
-                $recipient['address']['country'],
-            ],
-            'array' => true,
-        ])[0][0];
-
         $into = '';
         $values = '';
         $type = '';
@@ -275,20 +273,63 @@ trait Gazet
 
         // create recipient
         $this->db->request([
-            'query' => 'INSERT INTO recipient (idfamily,display_name,birthdate,idaddress,referent' . $into . ') VALUES (?,?,?,?,?' . $values . ');',
-            'type' => 'issii' . $type,
-            'content' => [$idfamily, $displayName, $recipient['birthdate'], $idaddress, $iduser, ...$content],
+            'query' => 'INSERT INTO recipient (idfamily,display_name,birthdate,referent' . $into . ') VALUES (?,?,?,?' . $values . ');',
+            'type' => 'issi' . $type,
+            'content' => [$idfamily, $displayName, $recipient['birthdate'], $iduser, ...$content],
         ]);
-        $recipient = $this->db->request([
+        $recipientData = $this->db->request([
             'query' => 'SELECT idrecipient,created FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $displayName],
         ])[0];
 
-        // update gazette
-        $this->setGazettes($idfamily, $recipient['created']);
+        // create address
+        $this->db->request([
+            'query' => 'INSERT INTO address (idrecipient,name,phone,field1,field2,field3,postal,city,state,country) VALUES (?,?,?,?,?,?,?,?,?,?);',
+            'type' => 'isssssssss',
+            'content' => [
+                $recipientData['idrecipient'],
+                $recipient['address']['name'],
+                $recipient['address']['phone'] ?? '',
+                $recipient['address']['field1'],
+                $recipient['address']['field2'] ?? '',
+                $recipient['address']['field3'] ?? '',
+                $recipient['address']['postal'],
+                $recipient['address']['city'],
+                $recipient['address']['state'],
+                $recipient['address']['country'],
+            ],
+        ]);
 
-        return $this->getRecipientData($recipient['idrecipient']);
+        // update gazette
+        $this->setGazettes($idfamily, $recipientData['created']);
+
+        $data = [
+            'recipient' => $recipientData['idrecipient'],
+            'user' => $recipient['iduser'],
+            'family' => $idfamily,
+            'type' => 15,
+        ];
+        $familyName = $this->getFamilyName($idfamily);
+        $members = $this->getFamilyMembers($idfamily, !empty($recipient['iduser']) ? [$recipient['iduser']] : []);
+        if (!empty($recipient['iduser'])) {
+            if ($recipient['iduser'] !== $iduser)
+                $this->sendNotification(
+                    [$recipient['iduser']],
+                    'Nouveau destinataire !',
+                    'Vous avez été ajouté aux destinataires de la famille ' . $familyName . '.',
+                    $data
+                );
+            else $this->sendData([$recipient['iduser']], $data);
+        }
+        $this->sendNotification(
+            $members,
+            'Nouveau destinataire !',
+            $displayName . ' a été ajouté aux destinataires de la famille ' . $familyName . '.',
+            $data
+        );
+
+        return $this->getRecipientData($recipientData['idrecipient']);
     }
 
     /**
@@ -335,30 +376,56 @@ trait Gazet
     private function familyEmailInvite(int $iduser, int $idfamily, string $email)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false; // check if inviter is member
-        $email = gmailNoPeriods($email); // clean email address
+        $email = gmailNoPeriods($email);
         $invitee = $this->getUserByEmail($email); // get iduser for email if exists
         $into = '';
         $value = '';
         $type = '';
         $content = [];
         if ($invitee) { // check if invitee is already member
-            if ($this->userIsMemberOfFamily($invitee, $idfamily)) return false;
+            if ($this->userIsMemberOfFamily($invitee, $idfamily)) return 1;
             $into = ',invitee';
             $value = ',?';
             $type = 'i';
             $content[] = $invitee;
         }
-        if (!empty($this->db->request([
+        if (!empty($this->db->request([ //  check if invitation already exists
             'query' => 'SELECT NULL FROM family_invitation WHERE email = ? AND idfamily = ? LIMIT 1;',
             'type' => 'si',
             'content' => [$email, $idfamily],
-        ]))) return false;
+        ]))) return 2;
         $approved = $this->userIsAdminOfFamily($iduser, $idfamily) ? 1 : 0;
         $this->db->request([
             'query' => 'INSERT INTO family_invitation (idfamily,email,inviter,approved' . $into . ') VALUES (?,?,?,?' . $value . ');',
             'type' => 'isii' . $type,
             'content' => [$idfamily, $email, $iduser, $approved, ...$content],
         ]);
+
+        $data = [
+            'family' => $idfamily,
+            'type' => 11,
+            'user' => $invitee,
+            'email' => $email,
+        ];
+        $familyName = $this->getFamilyName($idfamily);
+        if ($invitee) { // send notification to invitee if exists
+            $this->sendNotification(
+                [$invitee],
+                'Invitation reçue',
+                'Vous avez été invité à rejoindre la famille ' . $familyName . '.',
+                $data
+            );
+        }
+        $this->sendData([$iduser], $data); // send data to inviter
+        if ($approved === 0) { // if admin not inviter, send notification
+            $this->sendNotification(
+                [$this->getFamilyAdmin($idfamily)],
+                'Nouvelle invitation',
+                'Une nouvelle invitation dans la famille ' . $familyName . ' requiert votre attention.',
+                $data
+            );
+        }
+
         return true;
     }
 
@@ -434,21 +501,30 @@ trait Gazet
     /**
      * If familyInvitation approved, finalizes it, else sets it accepted.
      */
-    private function familyInvitationAccept($iduser, $idfamily)
+    private function userAcceptsInvitation($iduser, $idfamily)
     {
         if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
-        // if already member, remove invitation
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) {
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) { // if already member, remove invitation
             $this->familyInvitationRemove($iduser, $idfamily);
             return false;
-        } // if already member, false
+        }
         if (!$this->familyInvitationIsApproved($iduser, $idfamily)) {
             $this->db->request([ // else set accepted
                 'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
                 'type' => 'ii',
                 'content' => [$idfamily, $iduser],
             ]);
-            return ['state' => 0];
+            $data = [
+                'family' => $idfamily,
+                'type' => 12,
+                'user' => $iduser,
+            ];
+            $admin = $this->getFamilyAdmin($idfamily);
+            $this->sendData(
+                [$admin, $iduser],
+                $data
+            );
+            return ['state' => '0'];
         }
         $this->familyInvitationFinalize($iduser, $idfamily); // finalize familyInvitation process
         return ['data' => $this->getUserFamilyData($iduser, $idfamily), 'state' => '1'];
@@ -457,9 +533,9 @@ trait Gazet
     /**
      * If familyInvitation accepted, finalizes it, else sets it approved.
      */
-    private function familyInvitationApprove($iduser, $invitee, $idfamily)
+    private function userApprovesInvitation($iduser, $invitee, $idfamily)
     {
-        if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
+        if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
         $this->familyInvitationIsAccepted($invitee, $idfamily) // if accepted
             ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
@@ -469,6 +545,10 @@ trait Gazet
                 'content' => [$idfamily, $invitee],
             ]);
         return true;
+    }
+
+    private function familyInvitationDeny($iduser, $invitee, $idfamily)
+    {
     }
 
     private function familyInvitationExist($iduser, $idfamily)
@@ -520,14 +600,6 @@ trait Gazet
         ])[0][0] ?? false;
     }
 
-    private function familyInvitationRefuse($iduser, $idfamily)
-    {
-        if (!$this->familyInvitationExist($iduser, $idfamily)) return false;
-        // TODO: invitation refusal: notify inviter && admin
-        $this->familyInvitationRemove($iduser, $idfamily);
-        return true;
-    }
-
     /**
      * Removes familyInvitation for given user and family.
      */
@@ -576,19 +648,46 @@ trait Gazet
     private function familyRequestApprove(int $iduser, int $requester, int $idfamily)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // false if user is not admin of family
-        // if requester is member of family, remove request
         if (!$this->userIsMemberOfFamily($requester, $idfamily)) {
             $this->addUserToFamily($requester, $idfamily); // add requester to family
+            // $familyName = $this->getFamilyName($idfamily);
+            // $data = [
+            //     'family' => $idfamily,
+            //     'type' => 10,
+            //     'user'=>$requester,
+            // ];
+            // $this->sendNotification(
+            //     [$iduser],
+            //     'La Gazet',
+            //     'Vous avez rejoint la famille ' . $familyName . '.',
+            //     $data
+            // );
+            // $this->sendData([$iduser], $data);
+            // TODO: send push to family members
+
         }
         $this->familyRequestRemove($requester, $idfamily);
         return $this->getUserFamilyData($iduser, $idfamily);
     }
 
-    private function familyRequestRefuse(int $iduser, int $idrequester, int $idfamily)
+    private function familyRequestDeny(int $iduser, int $idrequester, int $idfamily)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
-        // TODO: send notification to requester
         $this->familyRequestRemove($idrequester, $idfamily);
+        $data = [
+            'user' => $idrequester,
+            'family' => $idfamily,
+            'type' => 10,
+        ];
+        // send notification to requester
+        $this->sendNotification(
+            [$idrequester],
+            'Adhésion refusée',
+            'Votre demande d\'adhésion à la famille ' . $this->getFamilyName($idfamily) . ' a été refusée.',
+            $data
+        );
+        // send data to admin
+        $this->sendData([$iduser], $data);
         return $this->getUserFamilyData($iduser, $idfamily);
     }
 
@@ -822,7 +921,7 @@ trait Gazet
     {
         // if (!$this->familyHasInvitation($idfamily)) return false;
         return $this->db->request([
-            'query' => 'SELECT email,invitee,inviter,approved,accepted,created FROM family_invitation WHERE idfamily = ?;',
+            'query' => 'SELECT email,invitee,inviter,approved,accepted,created FROM family_invitation WHERE idfamily = ? AND invitee IS NOT NULL;',
             'type' => 'i',
             'content' => [$idfamily],
         ]);
@@ -1270,7 +1369,7 @@ trait Gazet
         return $date->format('Y-m-d');
     }
 
-    private function getPublicationsAuthor(int $idpublication)
+    private function getPublicationAuthor(int $idpublication)
     {
         return $this->db->request([
             'query' => 'SELECT author FROM publication WHERE idpublication = ? LIMIT 1;',
@@ -1284,7 +1383,7 @@ trait Gazet
     {
         // TODO: check if it returns the right count of comments
         return $this->db->request([
-            'query' => 'SELECT COUNT(*) FROM publication_has_comment WHERE idpublication = ?;',
+            'query' => 'SELECT COUNT(*) FROM comment WHERE idpublication = ?;',
             'type' => 'i',
             'content' => [$idpublication],
             'array' => true,
@@ -1315,7 +1414,7 @@ trait Gazet
     private function getPublicationCommentsId(int $idpublication)
     {
         $comments = $this->db->request([
-            'query' => 'SELECT idcomment FROM publication_has_comment WHERE idpublication = ?;',
+            'query' => 'SELECT idcomment FROM comment WHERE idpublication = ?;',
             'type' => 'i',
             'content' => [$idpublication],
             'array' => true,
@@ -1324,7 +1423,7 @@ trait Gazet
         return $comments;
     }
 
-    private function getPublicationData(int $idpublication)
+    private function getPublicationData(int $idpublication, int $iduser = null)
     {
         $publication = $this->db->request([
             'query' => "SELECT title,
@@ -1344,8 +1443,11 @@ trait Gazet
         // get layout
         $publication['layout'] = $this->getLayout($publication['idlayout']);
         // // get like
-        // if ($iduser !== $publication['author'])
-        // $publication['like'] = $this->userLikesPublication($iduser, $publication['idpublication']);
+        if (!empty($iduser)) {
+            $publication['idpublication'] = $idpublication;
+            if ($iduser !== $publication['author'])
+                $publication['like'] = $this->userLikesPublication($iduser, $idpublication);
+        }
         // get likes count
         $publication['likes'] = $this->getPublicationLikesCount($idpublication);
         // get comments count
@@ -1355,7 +1457,6 @@ trait Gazet
         // get text
         if (empty($publication['text']))
             $publication['text'] = $this->getPublicationText($idpublication);
-        // $publication['author'] = $this->getUserName($publication['author']); // users info already in app
         return $publication;
     }
 
@@ -1422,11 +1523,10 @@ trait Gazet
      */
     private function getRecipientAddress(int $idrecipient)
     {
-        $idaddress = $this->getRecipientAddressId($idrecipient);
         return $this->db->request([
-            'query' => 'SELECT name,phone,field1,field2,field3,postal,city,state,country FROM address WHERE idaddress = ? LIMIT 1;',
+            'query' => 'SELECT name,phone,field1,field2,field3,postal,city,state,country FROM address WHERE idrecipient = ? LIMIT 1;',
             'type' => 'i',
-            'content' => [$idaddress],
+            'content' => [$idrecipient],
         ])[0];
     }
 
@@ -1434,15 +1534,15 @@ trait Gazet
      * Returns recipient's address id.
      * @return int Address id
      */
-    private function getRecipientAddressId(int $idrecipient)
-    {
-        return $this->db->request([
-            'query' => 'SELECT idaddress FROM recipient WHERE idrecipient = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idrecipient],
-            'array' => true,
-        ])[0][0];
-    }
+    // private function getRecipientAddressId(int $idrecipient)
+    // {
+    //     return $this->db->request([
+    //         'query' => 'SELECT idaddress FROM recipient WHERE idrecipient = ? LIMIT 1;',
+    //         'type' => 'i',
+    //         'content' => [$idrecipient],
+    //         'array' => true,
+    //     ])[0][0];
+    // }
 
     /**
      * Returns recipient's avatar's idobject
@@ -1468,6 +1568,19 @@ trait Gazet
             'address' => $this->getRecipientAddress($idrecipient),
             'subscription' => $this->getRecipientSubscription($idrecipient)
         ];
+    }
+
+    /**
+     * Returns recipient's display name.
+     */
+    private function getRecipientDisplayName(int $idrecipient)
+    {
+        return $this->db->request([
+            'query' => 'SELECT display_name FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0];
     }
 
     /**
@@ -1795,30 +1908,55 @@ trait Gazet
 
     private function getUnseen(int $iduser)
     {
-        $publications = $this->db->request([
-            'query' => 'SELECT idpublication FROM unseen_publication WHERE iduser = ?;',
-            'type' => 'i',
-            'content' => [$iduser],
-            'array' => true,
-        ]);
-        foreach ($publications as &$publication) $publication = $publication[0];
-        $comments = $this->db->request([
-            'query' => 'SELECT idcomment FROM unseen_comment WHERE iduser = ?;',
-            'type' => 'i',
-            'content' => [$iduser],
-            'array' => true,
-        ]);
-        foreach ($comments as &$comment) $comment = $comment[0];
-        $members = $this->db->request([
-            'query' => 'SELECT member,idfamily FROM unseen_member WHERE iduser = ?;',
-            'type' => 'i',
-            'content' => [$iduser],
-        ]);
-        return [
-            'publications' => $publications,
-            'comments' => $comments,
-            'members' => $members,
+        $response = [];
+        $setFamily = fn (int $idfamily) => [
+            $idfamily => [
+                'publications' => [],
+                'comments' => [],
+                'members' => [],
+            ]
         ];
+        $publications = $this->db->request([
+            'query' => 'SELECT idpublication,idfamily,created FROM unseen_publication LEFT JOIN publication USING (idpublication) WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        // regroup publications by family
+        if (!empty($publications))
+            foreach ($publications as $publication) {
+                if (!isset($response[$publication['idfamily']])) $setFamily($publication['idfamily']);
+                $response[$publication['idfamily']]['publications'][] = $publication;
+            }
+
+        $comments = $this->db->request([
+            'query' => 'SELECT comment.idcomment, comment.idpublication, publication.idfamily, comment.created
+                FROM unseen_comment
+                LEFT JOIN comment USING (idcomment)
+                LEFT JOIN publication ON comment.idpublication = publication.idpublication
+                WHERE unseen_comment.iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        // regroup comments by family
+        if (!empty($comments))
+            foreach ($comments as $comment) {
+                if (!isset($response[$comment['idfamily']])) $setFamily($comment['idfamily']);
+                $response[$comment['idfamily']]['comments'][] = $comment;
+            }
+
+        $members = $this->db->request([
+            'query' => 'SELECT member,idfamily,created FROM unseen_member WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        // regroup members by family
+        if (!empty($members))
+            foreach ($members as $member) {
+                if (!isset($response[$member['idfamily']])) $setFamily($member['idfamily']);
+                $response[$member['idfamily']]['members'][] = $member;
+            }
+
+        return $response;
     }
 
     /**
@@ -2083,7 +2221,7 @@ trait Gazet
     {
         $users = implode(',', $users);
         $tokens = $this->db->request([
-            'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser IN (' . $users . ');',
+            'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser IN (' . $users . ') GROUP BY token;',
             'array' => true,
         ]);
         foreach ($tokens as &$token) $token = $token[0];
@@ -2159,31 +2297,39 @@ trait Gazet
     /**
      * Removes address if not linked to any recipient.
      */
-    private function removeAddress(int $idaddress)
-    {
-        if (!empty($this->db->request([
-            'query' => 'SELECT NULL FROM recipient WHERE idaddress = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idaddress],
-        ]))) return false;
-        $this->db->request([
-            'query' => 'DELETE FROM address WHERE idaddress = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idaddress],
-        ]);
-        return true;
-    }
+    // private function removeAddress(int $idaddress)
+    // {
+    //     if (!empty($this->db->request([
+    //         'query' => 'SELECT NULL FROM recipient WHERE idaddress = ? LIMIT 1;',
+    //         'type' => 'i',
+    //         'content' => [$idaddress],
+    //     ]))) return false;
+    //     $this->db->request([
+    //         'query' => 'DELETE FROM address WHERE idaddress = ? LIMIT 1;',
+    //         'type' => 'i',
+    //         'content' => [$idaddress],
+    //     ]);
+    //     return true;
+    // }
 
     /**
      * Removes a given comment.
      */
-    private function removeComment(int $idcomment)
+    private function removeComment(int $idfamily, int $idpublication, int $idcomment)
     {
         $this->db->request([
             'query' => 'DELETE FROM comment WHERE idcomment = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idcomment],
         ]);
+        $members = $this->getFamilyMembers($idfamily);
+        $data = [
+            'comment' => $idcomment,
+            'family' => $idfamily,
+            'publication' => $idpublication,
+            'type' => 5,
+        ];
+        $this->sendData($members, $data);
         return true;
     }
 
@@ -2199,11 +2345,10 @@ trait Gazet
         if (!$publications) return;
         $publications = implode(',', $publications);
         $targetComments = $this->db->request([
-            'query' => "SELECT idcomment FROM publication_has_comment WHERE idpublication IN ($publications) AND idcomment IN ($comments);",
-            'array' => true,
+            'query' => "SELECT idcomment,idpublication FROM comment WHERE idpublication IN ($publications) AND idcomment IN ($comments);",
         ]);
         if (empty($targetComments)) return;
-        foreach ($targetComments as $comment) $this->removeComment($comment);
+        foreach ($targetComments as $comment) $this->removeComment($idfamily, $comment['idpublication'], $comment['idcomment']);
         return;
     }
 
@@ -2291,7 +2436,7 @@ trait Gazet
             'content' => [$iduser],
         ]);
         $comments = $this->db->request([
-            'query' => "SELECT idcomment FROM publication_has_comment WHERE idpublication IN ($publications);",
+            'query' => "SELECT idcomment FROM comment WHERE idpublication IN ($publications);",
             'array' => true,
         ]);
         if (empty($comments)) return;
@@ -2305,57 +2450,50 @@ trait Gazet
         return;
     }
 
-    private function removeMemberFromFamily(int $iduser, int $idfamily, ?int $idmember)
+    private function removeMember(int $iduser, int $idfamily)
     {
-        $idmember = $idmember ?? $iduser;
-        // TODO: if last member of family, remove family. !!! SHOULDN'T be possible, last member === admin, admin has to remove family, not suppress himself
-        if (!$this->familyHasOtherMembers($idmember, $idfamily)) return $this->deleteFamily($iduser, $idfamily);
-
-        // if user != member or not admin of family, return false
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return false;
-        // TODO: if admin is leaving family, let him/she designate the next admin (UI side)
-        if ($this->userIsAdminOfFamily($iduser, $idfamily) && $iduser === $idmember) return false;
-
-        // if user is recipient of family, remove it
-        $idrecipient = $this->userIsRecipientOfFamily($idmember, $idfamily);
-        if ($idrecipient) {
-            $this->removeRecipient($iduser, $idrecipient);
-        }
-
         // TODO: if leaver is referent for recipient(s) AND not admin, set admin referent with notification
         $recipients = $this->getReferentRecipients($iduser, $idfamily);
         if ($recipients) {
             $admin = $this->getFamilyAdmin($idfamily);
-            foreach ($recipients as $recipient) $this->setRecipientReferent($iduser, $recipient, $admin);
+            foreach ($recipients as $recipient) $this->setReferent($idfamily, $recipient, $admin);
         }
 
-        // if member has running subscription for family, cancel them
-        $this->removeUserFamilySubscriptions($iduser, $idfamily);
-
         // TODO: keep/archive member's family data for some time in case user joins again in the future ?
-        $this->removePublicationsByFamilyMember($idmember, $idfamily);
-        $this->removeCommentsByFamilyMember($idmember, $idfamily);
-        $this->removeLikesByFamilyMember($idmember, $idfamily);
+        $this->removePublicationsByFamilyMember($iduser, $idfamily);
+        $this->removeCommentsByFamilyMember($iduser, $idfamily);
+        $this->removeLikesByFamilyMember($iduser, $idfamily);
 
         // if family is default for user, set another family as default
-        $default = $this->familyIsDefaultForUser($idmember, $idfamily) ? $this->setOtherFamilyDefault($idmember, $idfamily) : false;
+        $default = $this->familyIsDefaultForUser($iduser, $idfamily) ? $this->setOtherFamilyDefault($iduser, $idfamily) : false;
 
         // remove user from family
         $this->db->request([
             'query' => 'DELETE FROM family_has_member WHERE idfamily = ? AND iduser = ? LIMIT 1;',
             'type' => 'ii',
-            'content' => [$idfamily, $idmember],
+            'content' => [$idfamily, $iduser],
         ]);
 
-        // TODO: send push notification to removed member
+        // send data to members
+        $members = $this->getFamilyMembers($idfamily);
+        $data = [
+            'family' => $idfamily,
+            'member' => $iduser,
+            'type' => 8,
+        ];
+        $this->sendData([$iduser, ...$members], $data);
 
-        return ['state' => 0, 'default' => $iduser === $idmember ? $default : false, 'family' => $this->getUserFamilyData($iduser, $idfamily)]; // TODO: code != states for removeMemberFromFamily
+        // return true;
+        return [
+            'default' => $default,
+            'family' => $this->getUserFamilyData($iduser, $idfamily),
+        ];
     }
 
     /**
      * Removes publication and all data linked to it.
      */
-    private function removePublication(int $idpublication)
+    private function removePublication(int $iduser, int $idfamily, int $idpublication)
     {
         // get gazettes where publication is
         $gazettes = $this->getGazettesByPublication($idpublication);
@@ -2383,6 +2521,15 @@ trait Gazet
         ]);
         // update gazettes
         if ($gazettes) foreach ($gazettes as $idgazette) $this->updateGazette($idgazette);
+
+        // send notifications
+        $members = $this->getFamilyMembers($idfamily);
+        $data = [
+            'family' => $idfamily,
+            'publication' => $idpublication,
+            'type' => 2,
+        ];
+        $this->sendData($members, $data);
 
         return true;
     }
@@ -2473,24 +2620,16 @@ trait Gazet
             'content' => [$iduser, $idfamily],
             'array' => true,
         ]);
-        foreach ($publications as &$publication) $this->removePublication($iduser, $idfamily, $publication);
+        foreach ($publications as $publication) $this->removePublication($iduser, $idfamily, $publication[0]);
         return true;
     }
 
-    private function removeRecipient(int $iduser, int $idrecipient)
+    private function removeRecipient(int $idfamily, int $idrecipient)
     {
-        // TODO: check if not too late to remove recipient before next gazette.
-        $idfamily = $this->getRecipientFamily($idrecipient);
-        // if user admin, referent or the recipient
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsReferent($iduser, $idrecipient)) return false;
-
-        $this->removeRecipientSubscription($iduser, $idrecipient);
-
-        // remove recipient and its data
         // TODO: remove gazettes from storage if recipient is not a user.
 
         $data = $this->db->request([
-            'query' => 'SELECT iduser,idaddress,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
+            'query' => 'SELECT display_name,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idrecipient],
         ])[0];
@@ -2499,9 +2638,22 @@ trait Gazet
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
-        $this->removeAddress($data['idaddress']);
-        if (!empty($data['avatar'])) $this->removeRecipientAvatar($idrecipient);
-        if (empty($data['iduser'])) $this->removeRecipientGazettes($idrecipient); // if no user linked, remove gazettes
+        // $this->removeAddress($data['idaddress']); // automatic with foreign key
+        if (!empty($data['avatar']) && !$this->checkAvatarUserLink($data['avatar'])) $this->removeS3Object($data['avatar']);
+        // if (empty($data['iduser'])) $this->removeRecipientGazettes($idrecipient); // automatic with foreign key
+        $data = [
+            'date' => date('Y-m-d H:i:s'),
+            'family' => $idfamily,
+            'recipient' => $idrecipient,
+            'type' => 16,
+        ];
+        $members = $this->getFamilyMembers($idfamily);
+        $this->sendNotification(
+            $members,
+            'Destinataire supprimé',
+            'Le destinataire ' . $data['display_name'] . ' a été supprimé de la famille ' . $this->getFamilyName($idfamily) . '.',
+            $data,
+        );
         return true;
     }
 
@@ -2601,14 +2753,14 @@ trait Gazet
         ]);
     }
 
-    private function removeFCMToken(string $token)
-    {
-        return $this->db->request([
-            'query' => 'DELETE FROM user_has_fcm_token WHERE token = ? LIMIT 1;',
-            'type' => 's',
-            'content' => [$token],
-        ]);
-    }
+    // private function removeFCMToken(string $token)
+    // {
+    //     return $this->db->request([
+    //         'query' => 'DELETE FROM user_has_fcm_token WHERE token = ? LIMIT 1;',
+    //         'type' => 's',
+    //         'content' => [$token],
+    //     ]);
+    // }
 
     private function removeUnseenPublication(int $iduser, int $idpublication)
     {
@@ -2683,18 +2835,24 @@ trait Gazet
     private function sendData(array $users, array $data = [])
     {
         $tokens = $this->getUsersTokens($users);
-        // TODO: handle invalid tokens
-        $response = $this->messaging->sendData($tokens, $data);
-        if (!empty($response)) foreach ($response as $token) $this->removeFCMToken($token);
+        $data['notification'] = false;
+        $this->serv->task([
+            'tokens' => $tokens,
+            'data' => $data,
+        ]);
         return;
     }
 
     private function sendNotification(array $users, string $title, string $message, array $data = [])
     {
         $tokens = $this->getUsersTokens($users);
-        // TODO: handle invalid tokens
-        $response = $this->messaging->sendNotification($tokens, $title, $message, $data);
-        if (!empty($response)) foreach ($response as $token) $this->removeFCMToken($token);
+        $data['notification'] = true;
+        $this->serv->task([
+            'tokens' => $tokens,
+            'title' => $title,
+            'body' => $message,
+            'data' => $data,
+        ]);
         return;
     }
 
@@ -2705,56 +2863,67 @@ trait Gazet
     private function setComment(int $iduser, int $idfamily, int $idpublication, string $comment)
     {
         $this->db->request([
-            'query' => 'INSERT INTO comment (iduser,content) VALUES (?,?);',
-            'type' => 'is',
-            'content' => [$iduser, $comment],
+            'query' => 'INSERT INTO comment (iduser,idpublication,content) VALUES (?,?,?);',
+            'type' => 'iis',
+            'content' => [$iduser, $idpublication, $comment],
         ]);
         $comment = $this->db->request([
             'query' => 'SELECT idcomment,created FROM comment WHERE iduser = ? AND content = ? ORDER BY created DESC LIMIT 1;',
             'type' => 'is',
             'content' => [$iduser, $comment],
         ])[0];
-        $this->db->request([
-            'query' => 'INSERT INTO publication_has_comment (idpublication,idcomment) VALUES (?,?);',
-            'type' => 'ii',
-            'content' => [$idpublication, $comment['idcomment']],
-        ]);
-        $author = $this->getPublicationsAuthor($idpublication);
+        $author = $this->getPublicationAuthor($idpublication);
         $members = $this->getFamilyMembers($idfamily, [$iduser, $author]);
         $title = 'Nouveau commentaire';
         $data = [
+            'author' => $iduser,
             'date' => $comment['created'],
             'family' => $idfamily,
-            'idcomment' => $comment['idcomment'],
-            'idpublication' => $idpublication,
-            'type' => 'comment',
+            'comment' => $comment['idcomment'],
+            'publication' => $idpublication,
+            'type' => 4,
         ];
         $this->setUnseenComment([$author, ...$members], $comment['idcomment']);
-        if (!empty($members)) {
+        $this->sendData([$iduser], $data);
+        if (!empty($members))
             $this->sendNotification(
                 $members,
                 $title,
                 $this->getUserName($iduser)['first_name'] . ' a commenté une publication',
                 $data,
             );
-        }
-        $this->sendNotification(
-            [$author],
-            $title,
-            $this->getUserName($iduser)['first_name'] . ' a commenté votre publication',
-            $data,
-        );
+        if ($author !== $iduser)
+            $this->sendNotification(
+                [$author],
+                $title,
+                $this->getUserName($iduser)['first_name'] . ' a commenté votre publication',
+                $data,
+            );
         return $comment['idcomment'];
+    }
+
+    private function getCommentsPublication(int $idcomment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idpublication FROM comment WHERE idcomment = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idcomment],
+            'array' => true,
+        ])[0][0];
     }
 
     private function setCommentLike(int $iduser, int $idfamily, int $idcomment)
     {
         $like = $this->userLikesComment($iduser, $idcomment);
-        $exclude = [$iduser];
+        $exclude = [];
+        $idpublication = $this->getCommentsPublication($idcomment);
         $data = [
-            'idcomment' => $idcomment,
-            'iduser' => $iduser,
-            'type' => 'commentlike',
+            'comment' => $idcomment,
+            'family' => $idfamily,
+            'likes' => $this->getCommentLikesCount($idcomment) + ($like ? -1 : 1),
+            'publication' => $idpublication,
+            'type' => 6,
+            'user' => $iduser,
             'value' => !$like,
         ];
         if ($like)
@@ -2769,20 +2938,19 @@ trait Gazet
                 'type' => 'ii',
                 'content' => [$idcomment, $iduser],
             ]);
-            // TODO: send notification to comment author
             $author = $this->getCommentsAuthor($idcomment);
-            $exclude[] = $author;
-            $title = 'Nouveau like';
-            $this->sendNotification(
-                [$author],
-                $title,
-                $this->getUserName($iduser)['first_name'] . ' a aimé votre commentaire',
-                $data,
-            );
+            if ($author !== $iduser) {
+                $exclude[] = $author;
+                $this->sendNotification(
+                    [$author],
+                    'Nouveau like',
+                    $this->getUserName($iduser)['first_name'] . ' a aimé votre commentaire',
+                    $data,
+                );
+            }
         }
-        // TODO: send data to family members except user (and author if like)
         $members = $this->getFamilyMembers($idfamily, $exclude);
-        if (!empty($members)) $this->sendData($members, $data);
+        $this->sendData($members, $data);
         return ['liked' => !$like, 'likes' => $this->getCommentLikesCount($idcomment)];
     }
 
@@ -2885,6 +3053,11 @@ trait Gazet
             'type' => 'ii',
             'content' => [$nextFamily, $iduser],
         ]);
+        else $this->db->request([
+            'query' => 'DELETE FROM default_family WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
         return $nextFamily ?? false;
     }
 
@@ -2950,6 +3123,15 @@ trait Gazet
                 'query' => 'INSERT INTO recipient_has_publication (idrecipient,idpublication) VALUES ' . $insert . ';',
             ]);
         }
+        // send notifications
+        $data = [
+            'date' => $publication['created'],
+            'family' => $idfamily,
+            'publication' => $publication['idpublication'],
+            'type' => 1,
+            'author' => $iduser,
+        ];
+        $this->sendData([$iduser], $data);
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($members)) {
             $this->setUnseenPublication($members, $publication['idpublication']);
@@ -2957,27 +3139,23 @@ trait Gazet
                 $members,
                 'Nouvelle publication',
                 $this->getUserName($iduser)['first_name'] . ' a ajouté une publication',
-                [
-                    'date' => $publication['created'],
-                    'family' => $idfamily,
-                    'idpublication' => $publication['idpublication'],
-                    'type' => 'publication',
-                ]
+                $data,
             );
         }
-
         return $publication['idpublication'];
     }
 
     private function setPublicationLike(int $iduser, int $idfamily, int $idpublication)
     {
         $like = $this->userLikesPublication($iduser, $idpublication);
-        $exclude = [$iduser];
+        $exclude = [];
         $data = [
-            'date' => $this->getPublicationDate($idpublication),
+            'date' => date('Y-m-d H:i:s'),
             'family' => $idfamily,
-            'idpublication' => $idpublication,
-            'type' => 'publicationlike',
+            'likes' => $this->getPublicationLikesCount($idpublication) + ($like ? -1 : 1),
+            'publication' => $idpublication,
+            'type' => 3,
+            'user' => $iduser,
             'value' => !$like,
         ];
         if ($like)
@@ -2992,14 +3170,16 @@ trait Gazet
                 'type' => 'ii',
                 'content' => [$idpublication, $iduser],
             ]);
-            $author = $this->getPublicationsAuthor($idpublication);
-            $exclude[] = $author;
-            $this->sendNotification(
-                [$author],
-                'Nouveau like',
-                $this->getUserName($iduser)['first_name'] . ' a aimé votre publication',
-                $data,
-            );
+            $author = $this->getPublicationAuthor($idpublication);
+            if ($author !== $iduser) {
+                $exclude[] = $author;
+                $this->sendNotification(
+                    [$author],
+                    'Nouveau like',
+                    $this->getUserName($iduser)['first_name'] . ' a aimé votre publication',
+                    $data,
+                );
+            }
         }
         $members = $this->getFamilyMembers($idfamily, $exclude);
         if (!empty($members))
@@ -3050,14 +3230,35 @@ trait Gazet
         return true;
     }
 
-    private function setRecipientReferent(int $iduser, int $idrecipient, int $idreferent)
+    private function setReferent(int $idfamily, int $idrecipient, int $idreferent)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) && !$this->userIsReferent($iduser, $idrecipient)) return false;
         $this->db->request([
             'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idreferent, $idrecipient],
         ]);
+        $data = [
+            'date' => date('Y-m-d H:i:s'),
+            'family' => $idfamily,
+            'recipients' => [$idrecipient],
+            'referent' => $idreferent,
+            'type' => 17,
+        ];
+        // send notification to new referent
+        $recipientName = $this->getRecipientDisplayName($idrecipient);
+        $de = preg_match('/^[aeiouy]/i', $recipientName) ? 'd\'' : 'de ';
+        $this->sendNotification(
+            [$idreferent],
+            'Nouveau référent',
+            'Vous êtes désormais référent ' . $de . $recipientName . '.',
+            $data,
+        );
+        // send data to members
+        $this->sendData(
+            $this->getFamilyMembers($idfamily, [$idreferent]),
+            $data,
+        );
+
         return true;
     }
 
@@ -3524,7 +3725,7 @@ trait Gazet
     private function updateRecipientAddress(int $iduser, int $idrecipient, array $address)
     {
         if (!$this->userIsReferent($iduser, $idrecipient)) return false;
-        $idaddress = $this->getRecipientAddressId($idrecipient);
+        // $idaddress = $this->getRecipientAddressId($idrecipient);
         $set = [];
         $type = '';
         $content = [];
@@ -3575,9 +3776,9 @@ trait Gazet
         }
         $set = implode(',', $set);
         $this->db->request([
-            'query' => 'UPDATE address SET ' . $set . ' WHERE idaddress = ? LIMIT 1;',
+            'query' => 'UPDATE address SET ' . $set . ' WHERE idrecipient = ? LIMIT 1;',
             'type' => $type . 'i',
-            'content' => [...$content, $idaddress],
+            'content' => [...$content, $idrecipient],
         ]);
         return true;
     }
@@ -3696,19 +3897,42 @@ trait Gazet
         return $iduser === $object['owner'] || $this->usersHaveCommonFamily($iduser, $object['owner']);
     }
 
-    // private function userFCMExist(int $iduser, string $token)
-    // {
-    //     return !empty($this->db->request([
-    //         'query' => 'SELECT NULL FROM user_has_fcm_token WHERE iduser = ? AND token = ? LIMIT 1;',
-    //         'type' => 'is',
-    //         'content' => [$iduser, $token],
-    //     ]));
-    // }
-
     private function userCreateRecipient(int $iduser, int $idfamily, array $recipient)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
         return $this->createRecipient($iduser, $idfamily, $recipient);
+    }
+
+    private function userDeniesInvitation(int $iduser, int $idfamily, int $invitee)
+    {
+        if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
+        // remove invitation
+        $this->db->request([
+            'query' => 'DELETE FROM invitation WHERE idfamily = ? AND invitee = ?;',
+            'type' => '',
+            'content' => [],
+            'array' => true,
+        ]);
+        $data = [
+            'family' => $idfamily,
+            'invitee' => $invitee,
+            'type' => 13,
+        ];
+        // send notification to invitee
+        $this->sendNotification(
+            [$invitee],
+            'Invitation annulée',
+            'L\'administrateur de la famille ' . $this->getFamilyName($idfamily) . ' a annulé votre invitation.',
+            $data
+        );
+        // send data to admin
+        $this->sendData(
+            [$iduser],
+            $data
+        );
+        // return true
+        return true;
     }
 
     private function userFillGazetteWithGames(int $iduser, int $idfamily, int $idrecipient, int $idgazette)
@@ -3749,6 +3973,12 @@ trait Gazet
         return $this->getFamilyGazettes($idfamily);
     }
 
+    private function userGetPublicationData(int $iduser, int $idfamily, int $idpublication)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
+        return $this->getPublicationData($idpublication, $iduser);
+    }
+
     /**
      * Returns whether or not a user has a default family set.
      */
@@ -3780,6 +4010,20 @@ trait Gazet
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
         ]));
+    }
+
+    private function userHasFamilySubscription(int $iduser, int $idfamily)
+    {
+        $recipients = $this->db->request([
+            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? AND idfamily = ?;',
+            'type' => 'ii',
+            'content' => [$iduser, $idfamily],
+            'array' => true,
+        ]);
+        if (empty($recipients)) return false;
+        foreach ($recipients as $recipient) {
+            if ($this->getRecipientSubscription($recipient['idrecipient'])) return true;
+        }
     }
 
     /**
@@ -3896,6 +4140,17 @@ trait Gazet
         ]));
     }
 
+    private function userIsReferentInFamily(int $iduser, int $idfamily)
+    {
+        $recipients = $this->db->request([
+            'query' => 'SELECT idrecipient FROM recipient WHERE idfamily = ? AND referent = ?;',
+            'type' => 'ii',
+            'content' => [$idfamily, $iduser],
+            'array' => true,
+        ]);
+        return empty($recipients) ? false : array_column($recipients, 0);
+    }
+
     private function userLikesComment(int $iduser, int $idcomment)
     {
         return !empty($this->db->request([
@@ -3914,18 +4169,106 @@ trait Gazet
         ]));
     }
 
+    private function userRefusesInvitation($iduser, $idfamily)
+    {
+        if (!$this->familyInvitationExist($iduser, $idfamily)) return false;
+        // TODO: invitation refusal: notify inviter && admin
+        $this->familyInvitationRemove($iduser, $idfamily);
+        $admin = $this->getFamilyAdmin($idfamily);
+        $userName = $this->getUserName($iduser);
+        $data = [
+            'family' => $idfamily,
+            'invitee' => $iduser,
+            'type' => 14,
+        ];
+        $this->sendNotification(
+            [$admin],
+            'Invitation refusée',
+            'L\'invitation de ' . $userName['first_name'] . ' ' . $userName['last_name'] . ' à rejoindre la famille ' . $this->getFamilyName($idfamily) . ' a été refusée.',
+            $data
+        );
+        $this->sendData([$iduser], $data);
+        return true;
+    }
+
     private function userRemovesComment(int $iduser, int $idfamily, int $idpublication, int $idcomment)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $idcomment)) return false;
-        $this->removeComment($idcomment);
+        $this->removeComment($idfamily, $idpublication, $idcomment);
         return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
+    }
+
+    private function userRemovesMember(int $iduser, int $idfamily, ?int $idmember)
+    {
+        $idmember = $idmember ?? $iduser;
+
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return false;
+        if ($this->userIsAdminOfFamily($idmember, $idfamily)) return 1;
+        $recipient = $this->userIsRecipientOfFamily($idmember, $idfamily);
+        if ($recipient) {
+            if ($this->getRecipientSubscription($recipient)) return 2;
+            else $this->removeRecipient($idfamily, $recipient);
+        }
+        // if user is referent of family
+        $recipients = $this->userIsReferentInFamily($idmember, $idfamily);
+        if ($recipients) {
+            // set admin as referent before user removal
+            $admin = $this->getFamilyAdmin($idfamily);
+            $date = date('Y-m-d H:i:s');
+            $this->db->request([
+                'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient IN (' . implode(',', $recipients) . ');',
+                'type' => 'i',
+                'content' => [$admin],
+            ]);
+            foreach ($recipients as $recipient) {
+                $data = [
+                    'date' => $date,
+                    'family' => $idfamily,
+                    'referent' => $admin,
+                    'recipients' => [$recipient],
+                    'type' => 17,
+                ];
+                $recipientName = $this->getRecipientDisplayName($recipient);
+                $de = preg_match('/^[aeiouy]/i', $recipientName) ? 'd\'' : 'de ';
+                $this->sendNotification(
+                    [$admin],
+                    'Nouveau référent',
+                    'Vous êtes à présent le référent ' . $de . $recipientName . '.',
+                    $data
+                );
+            }
+            $members = $this->getFamilyMembers($idfamily, [$idmember, $admin]);
+            $this->sendData($members, [
+                'date' => $date,
+                'family' => $idfamily,
+                'referent' => $admin,
+                'recipients' => $recipients,
+                'type' => 17,
+            ]);
+        }
+
+        // remove member from family
+        return $this->removeMember($idmember, $idfamily);
+
+        // return [
+        //     'state' => 0,
+        //     // 'default' => $iduser === $idmember ? $default : false,
+        //     'family' => $this->getUserFamilyData($iduser, $idfamily)
+        // ];
     }
 
     private function userRemovesPublication(int $iduser, int $idfamily, int $idpublication)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
-        $this->removePublication($idpublication);
+        $this->removePublication($iduser, $idfamily, $idpublication);
         return true;
+    }
+
+    private function userRemovesRecipient(int $iduser, int $idfamily, int $idrecipient)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsReferent($iduser, $idrecipient)) return false;
+        if ($this->getRecipientSubscription($idrecipient)) return 1;
+        return $this->removeRecipient($idfamily, $idrecipient);
     }
 
     private function userRemovesRecipientAvatar(int $iduser, int $idfamily, int $idrecipient)
@@ -3935,7 +4278,7 @@ trait Gazet
         return $idobject;
     }
 
-    private function userRemoveUserAvatar(int $iduser, int $idfamily, int $idAvatarUser)
+    private function userRemovesUserAvatar(int $iduser, int $idfamily, int $idAvatarUser)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idAvatarUser) return false;
         $idobject = $this->removeUserAvatar($idAvatarUser);
@@ -3966,6 +4309,12 @@ trait Gazet
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily) || $this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
         return $this->setPublicationLike($iduser, $idfamily, $idpublication);
+    }
+
+    private function userSetRecipientReferent(int $iduser, int $idfamily, int $idrecipient, int $idreferent)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) && !$this->userIsReferent($iduser, $idrecipient)) return false;
+        return $this->setReferent($idfamily, $idrecipient, $idreferent);
     }
 
     private function userToggleAutocorrect(int $iduser)
@@ -4004,34 +4353,40 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $parameters['idcomment'])) return false;
         $this->updateComment($parameters['idcomment'], $parameters['content']);
+        $members = $this->getFamilyMembers($idfamily, [$iduser]);
+        $this->sendData($members, [
+            'family' => $idfamily,
+            'publication' => $parameters['idpublication'],
+            'type' => 19,
+        ]);
         return true;
     }
 
+    /**
+     * Create or update fcm token in database and removes duplicates.
+     */
     private function userUpdateFCMToken(int $iduser, string $token)
     {
-        // if token already exists, update it with new user
         $user = $this->db->request([
-            'query' => 'SELECT iduser FROM user_has_fcm_token WHERE token = ? LIMIT 1;',
+            'query' => 'SELECT iduser FROM user_has_fcm_token WHERE token = ?;',
             'type' => 's',
             'content' => [$token],
             'array' => true,
-        ])[0][0] ?? false;
-        if (!$user) {
+        ]);
+        if (empty($user) || count($user) > 1) {
+            if (count($user) > 1) $this->db->request([
+                'query' => 'DELETE FROM user_has_fcm_token WHERE token = ?;',
+                'type' => 's',
+                'content' => [$token],
+            ]);
             $this->db->request([
                 'query' => 'INSERT INTO user_has_fcm_token (iduser,token) VALUES (?,?);',
                 'type' => 'is',
                 'content' => [$iduser, $token],
             ]);
-        } else if ($user !== $iduser) {
-            $this->db->request([
-                'query' => 'UPDATE user_has_fcm_token SET iduser = ? WHERE token = ?;',
-                'type' => 'is',
-                'content' => [$iduser, $token],
-            ]);
         } else {
-            // if ($this->userFCMExist($iduser, $token))
             $this->db->request([
-                'query' => 'UPDATE user_has_fcm_token SET modified = CURRENT_TIMESTAMP() WHERE iduser = ? AND token = ? LIMIT 1;',
+                'query' => 'UPDATE user_has_fcm_token SET iduser = ?,modified = CURRENT_TIMESTAMP() WHERE token = ? LIMIT 1;',
                 'type' => 'is',
                 'content' => [$iduser, $token],
             ]);
@@ -4043,7 +4398,25 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $parameters['idpublication'])) return false;
         $this->updatePublication($parameters['idpublication'], $parameters);
-        return true;
+        $members = $this->getFamilyMembers($idfamily, [$iduser]);
+        if (!empty($parameters['layout'])) $parameters['layout'] = ['identifier' => $parameters['layout']];
+        if (!empty($parameters['images'])) foreach ($parameters['images'] as &$image) {
+            $image['idobject'] = $image['id'];
+            unset($image['id']);
+        }
+        // TODO: if publication private, don't send to other members the updates
+        $this->sendData($members, [
+            'family' => $idfamily,
+            'publication' => json_encode($parameters),
+            'type' => 18,
+        ]);
+        return $this->getPublicationData($parameters['idpublication'], $iduser);
+    }
+
+    private function userUpdateReferent(int $iduser, int $idfamily, int $recipient, int $referent)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
+        return $this->setReferent($idfamily, $recipient, $referent);
     }
 
     private function userUpdateUserAvatar(int $iduser, int $idUserAvatar, string $key)
@@ -4055,18 +4428,34 @@ trait Gazet
 
     private function userUseFamilyCode(int $iduser, string $code)
     {
-        // TODO: userUseFamilyCode: handle all cases better than with false
         $idfamily = $this->getFamilyWithCode($code); // get family with code
-        if (!$idfamily) return false; // false if no family
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false; // false if already member of family
-        if ($this->userHasFamilyRequest($iduser, $idfamily)) return false; // false if user already applied
+        if (!$idfamily) return 1; // no family
+        if ($this->userHasFamilyRequest($iduser, $idfamily)) return 2; // user already applied
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return 3; // user already member of family
         $this->db->request([
             'query' => 'INSERT INTO family_request (idfamily,iduser) VALUES (?,?);',
             'type' => 'ii',
             'content' => [$idfamily, $iduser],
         ]);
-        print('User ' . $iduser . ' successfuly applied to family ' . $idfamily . PHP_EOL);
-        return $this->getUserFamilyData($iduser, $idfamily); // WONT WORK, user's not a member yet
+        $data = [
+            'user' => $iduser,
+            'family' => $idfamily,
+            'type' => 9,
+        ];
+        // send notification to family admin
+        $admin = $this->getFamilyAdmin($idfamily);
+        $this->sendNotification(
+            [$admin],
+            'Nouvelle demande d\'adhésion',
+            $this->getUserName($iduser) . ' souhaite rejoindre la famille ' . $this->getFamilyName($idfamily) . '.',
+            $data,
+        );
+        // send data to user
+        $this->sendData(
+            [$iduser],
+            $data
+        );
+        return $this->getUserFamilyData($iduser, $idfamily);
     }
 
     private function usersHaveCommonFamily(int $user1, int $user2)

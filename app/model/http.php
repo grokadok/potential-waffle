@@ -30,8 +30,8 @@ trait Http
                 // if user doesn't exists in db
                 if (!$iduser) {
                     // if gmail address corresponds to existing user, link firebase user to it
-                    $emailFinal = gmailNoPeriods($post['email']);
-                    $iduser = $this->getUserIdFromEmail($emailFinal);
+                    $email = gmailNoPeriods($post['email']);
+                    $iduser = $this->getUserIdFromEmail($email);
                     if ($iduser) {
                         $this->addUser([
                             'iduser' => $iduser,
@@ -53,14 +53,14 @@ trait Http
                             unset($name);
                         }
                         $iduser = $this->addUser([
-                            'email' => $emailFinal,
+                            'email' => $email,
                             'firstname' => $firstname ?? '',
                             'lastname' => $lastname ?? '',
                             'firebase_uid' => $post['sub'],
                             'firebase_name' => $post['name'] ?? '',
                             'avatar' => $post['picture'] ?? '',
                         ]);
-                        $this->updateUserEmailInvitation($iduser, $emailFinal);
+                        $this->updateUserEmailInvitation($iduser, $email);
                         // DEV: TEST PROTOCOL FOR NEW USERS //
                         // $this->testerProcess($iduser);
                     }
@@ -73,10 +73,10 @@ trait Http
                     'f' => 1, // login approved
                     'families' => $this->getUserFamiliesData($iduser),
                     'gazetteTypes' => $this->getGazetteTypes(),
-                    'invitations' => $this->getUserInvitations($iduser),
+                    // 'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
                     'recipient' => $this->userIsRecipient($iduser),
-                    'requests' => $this->getUserRequests($iduser),
+                    // 'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'unseen' => $this->getUnseen($iduser),
                     'user' => ['id' => $iduser, 'new' => $this->userIsNew($iduser), ...$userData],
@@ -111,9 +111,9 @@ trait Http
             // REQUEST FAMILY  (5)
             /////////////////////////////////////////////////////
 
-            if ($f === 5) {
-                $responseContent = ['f' => 5, 'sent' => $this->requestAddToFamily($iduser, $post['i'])];
-            }
+            // if ($f === 5) {
+            //     $responseContent = ['f' => 5, 'sent' => $this->requestAddToFamily($iduser, $post['i'])];
+            // }
 
             /////////////////////////////////////////////////////
             // ADD USER TO FAMILY  (6)
@@ -124,11 +124,11 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // REMOVE MEMBER FROM FAMILY  (7)
+            // REMOVE FAMILY MEMBER  (7)
             /////////////////////////////////////////////////////
 
             if ($f === 7) {
-                $responseContent = ['f' => 7, 'removed' => $this->removeMemberFromFamily($iduser, $post['i'], $post['m'] ?? null)];
+                $responseContent = ['f' => 7, 'removed' => $this->userRemovesMember($iduser, $post['i'], $post['m'] ?? null)];
             }
 
             /////////////////////////////////////////////////////
@@ -160,7 +160,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 11) {
-                $responseContent = ['f' => 11, 'deleted' => $this->removeRecipient($iduser, $post['i'])];
+                $responseContent = ['f' => 11, 'deleted' => $this->userRemovesRecipient($iduser, $post['i'], $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -207,9 +207,9 @@ trait Http
             // UPDATE RECIPIENT (17)
             /////////////////////////////////////////////////////
 
-            if ($f === 17) {
-                $responseContent = ['f' => 17, 'updated' => $this->updateRecipient($iduser, $post['i'], $post['r'])];
-            }
+            // if ($f === 17) {
+            //     $responseContent = ['f' => 17, 'updated' => $this->updateRecipient($iduser, $post['i'], $post['r'])];
+            // }
 
             /////////////////////////////////////////////////////
             // INVITE MEMBER INTO FAMILY (18)
@@ -224,7 +224,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 19) {
-                $responseContent = ['f' => 19, 'approved' => $this->familyInvitationApprove($iduser, $post['u'], $post['i'])];
+                $responseContent = ['f' => 19, 'approved' => $this->userApprovesInvitation($iduser, $post['u'], $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -232,7 +232,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 20) {
-                $responseContent = ['f' => 20, 'accepted' => $this->familyInvitationAccept($iduser, $post['i'])];
+                $responseContent = ['f' => 20, 'accepted' => $this->userAcceptsInvitation($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -256,7 +256,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 23) {
-                $responseContent = ['f' => 23, 'refused' => $this->familyInvitationRefuse($iduser, $post['i'])];
+                $responseContent = ['f' => 23, 'refused' => $this->userRefusesInvitation($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -272,7 +272,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 25) {
-                $responseContent = ['f' => 25, 'removed' => $this->userRemoveUserAvatar($iduser, $post['i'], $post['u'])];
+                $responseContent = ['f' => 25, 'removed' => $this->userRemovesUserAvatar($iduser, $post['i'], $post['u'])];
             }
 
             /////////////////////////////////////////////////////
@@ -296,7 +296,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 28) {
-                $responseContent = ['f' => 28, 'denied' => $this->familyRequestRefuse($iduser, $post['r'], $post['i'])];
+                $responseContent = ['f' => 28, 'denied' => $this->familyRequestDeny($iduser, $post['r'], $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -435,7 +435,6 @@ trait Http
                 $responseContent = ['f' => 47, 'removed' => $this->userRemovesRecipientAvatar($iduser, $post['i'], $post['r'])];
             }
 
-
             /////////////////////////////////////////////////////
             // UPDATE DEVICE TOKEN (48)
             /////////////////////////////////////////////////////
@@ -444,8 +443,29 @@ trait Http
                 $responseContent = ['f' => 48, 'updated' => $this->userUpdateFCMToken($iduser, $post['t'])];
             }
 
+            /////////////////////////////////////////////////////
+            // ADMIN DENIES INVITATION (49)
+            /////////////////////////////////////////////////////
 
+            if ($f === 49) {
+                $responseContent = ['f' => 49, 'denied' => $this->userDeniesInvitation($iduser, $post['i'], $post['u'])];
+            }
 
+            /////////////////////////////////////////////////////
+            // UPDATE REFERENT (50)
+            /////////////////////////////////////////////////////
+
+            if ($f === 50) {
+                $responseContent = ['f' => 50, 'referent' => $this->userUpdateReferent($iduser, $post['i'], $post['e'], $post['r'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // GET PUBLICATION DATA (51)
+            /////////////////////////////////////////////////////
+
+            if ($f === 51) {
+                $responseContent = ['f' => 51, 'publication' => $this->userGetPublicationData($iduser, $post['i'], $post['p'])];
+            }
 
 
 
