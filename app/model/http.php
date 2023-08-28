@@ -71,11 +71,11 @@ trait Http
                 $responseContent = [
                     'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
-                    'families' => $this->getUserFamiliesData($iduser),
+                    'families' => $this->userGetFamiliesData($iduser),
                     'gazetteTypes' => $this->getGazetteTypes(),
                     // 'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
-                    'recipient' => $this->userIsRecipient($iduser),
+                    // 'recipient' => $this->userIsRecipient($iduser),
                     // 'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'unseen' => $this->getUnseen($iduser),
@@ -96,7 +96,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 3) {
-                $responseContent = ['f' => 3, 'families' => $this->getUserFamiliesData($iduser)];
+                $responseContent = ['f' => 3, 'families' => $this->userGetFamiliesData($iduser)];
             }
 
             /////////////////////////////////////////////////////
@@ -280,7 +280,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 26) {
-                $responseContent = ['f' => 26, 'updated' => $this->updateMember($iduser, $post['p'])];
+                $responseContent = ['f' => 26, 'updated' => $this->userUpdateMember($iduser, $post['p'])];
             }
 
             /////////////////////////////////////////////////////
@@ -304,7 +304,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 31) {
-                $responseContent = ['f' => 31, 'family' => $this->getUserFamilyData($iduser, $post['i'])];
+                $responseContent = ['f' => 31, 'family' => $this->userGetFamilyData($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -466,6 +466,7 @@ trait Http
             if ($f === 51) {
                 $responseContent = ['f' => 51, 'publication' => $this->userGetPublicationData($iduser, $post['i'], $post['p'])];
             }
+
 
 
 
