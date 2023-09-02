@@ -2,8 +2,6 @@
 
 namespace bopdev;
 
-require __DIR__ . '/../../vendor/autoload.php';
-
 use Aws\S3\S3Client as S3;
 use Aws\S3\Exception\S3Exception;
 use Aws\Exception\AwsException;
@@ -173,7 +171,7 @@ class S3Client
         try {
             return $this->client->listObjects([
                 'Bucket' => $bucket ?? $this->bucket,
-            ]);
+            ])->toArray();
         } catch (AwsException $e) {
             print($e);
         }

@@ -2,58 +2,21 @@
 
 namespace bopdev;
 
-$functions = __DIR__ . '/app/model/functions.php';
-$dbrequest = __DIR__ . '/app/model/dbrequest.php';
-$http = __DIR__ . '/app/model/http.php';
-$websocket = __DIR__ . '/app/model/websocket.php';
-// $login = __DIR__ . '/app/model/login.php';
-$auth = __DIR__ . '/app/model/auth.php';
-$messaging = __DIR__ . '/app/model/messaging.php';
-// $jwt_jwt = __DIR__ . '/app/jwt/JWT.php';
-// $jwt_jwk = __DIR__ . '/app/jwt/JWK.php';
-// $jwt_key = __DIR__ . '/app/jwt/Key.php';
-// $jwt_before = __DIR__ . '/app/jwt/BeforeValidException.php';
-// $jwt_cached = __DIR__ . '/app/jwt/CachedKeySet.php';
-// $jwt_expired = __DIR__ . '/app/jwt/ExpiredException.php';
-// $jwt_signature = __DIR__ . '/app/jwt/SignatureInvalidException.php';
-// $chat = __DIR__ . '/app/chat/chat.php';
-// $calendar = __DIR__ . '/app/calendar/calendar.php';
-// $caldav = __DIR__ . '/app/simplecaldav/SimpleCalDAVClient.php';
-$s3 = __DIR__ . '/app/model/s3.php';
-$localenv = __DIR__ . '/config/env.php'; // not used anymore
-
 foreach ([
-    $dbrequest,
-    $functions,
-    $http,
-    $websocket,
-    // $login,
-    $auth,
-    $messaging,
-    // $chat,
-    // $calendar,
-    // $caldav,
-    // $jwt_jwt,
-    // $jwt_jwk,
-    // $jwt_key,
-    // $jwt_before,
-    // $jwt_cached,
-    // $jwt_expired,
-    // $jwt_signature,
-    $s3,
-] as $value) {
-    require_once $value;
-};
-// require 'vendor/autoload.php';
-unset($dbrequest, $functions, $http, $websocket, $auth, $s3);
-if (getenv('ISLOCAL')) {
-    require_once $localenv;
-    unset($localenv);
-}
+    __DIR__ . '/vendor/autoload.php',
+    __DIR__ . '/app/model/functions.php',
+    __DIR__ . '/app/model/dbrequest.php',
+    __DIR__ . '/app/model/http.php',
+    __DIR__ . '/app/model/websocket.php',
+    __DIR__ . '/app/model/auth.php',
+    __DIR__ . '/app/model/messaging.php',
+    __DIR__ . '/app/model/s3.php',
+    __DIR__ . '/app/model/pdf.php',
+] as $value) require_once $value;
+if (getenv('ISLOCAL')) require_once __DIR__ . '/config/env.php';
 
 
 use Swoole\Coroutine;
-// use Swoole\Table;
 use Swoole\WebSocket\Server;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
@@ -76,13 +39,9 @@ class FWServer
         private $db = new DBRequest(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
-        // private $table = new Table(1024),
     ) {
         $this->appname = getenv('APP_NAME');
         $this->messaging = new Messaging($this->serv);
-        // $this->table->column("user", Table::TYPE_INT);
-        // $this->table->column("session", Table::TYPE_INT);
-        // $this->table->create();
         $this->serv->set([
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
@@ -106,7 +65,6 @@ class FWServer
         $this->serv->on("Task", [$this, "onTask"]);
         $this->serv->on("WorkerStart", [$this, "onWorkStart"]);
 
-        // $this->serv->table = $this->table;
         $this->serv->start();
     }
     private function getUserInfo(int $user)
@@ -365,7 +323,7 @@ class FWServer
     public function onTask($serv, $task_id, $srcWorkerId, $data)
     {
         try {
-            // echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
+            echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
             $response = isset($data['body']) ?
                 $this->messaging->sendNotification(
                     $data['tokens'],
@@ -406,13 +364,6 @@ class FWServer
     {
         echo "#### Worker#$worker_id started ####" . PHP_EOL;
         swoole_set_process_name("swoole_process_server_worker");
-        // $serv->on('PipeMessage', function (Server $serv, int $srcWorkerId, $message) {
-        //     // Process the message asynchronously
-        //     print($message);
-
-        //     // Send the result back to the worker
-        //     // $serv->sendMessage($result, $srcWorkerId);
-        // });
     }
 }
 

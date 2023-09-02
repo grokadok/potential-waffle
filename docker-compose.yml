@@ -41,18 +41,6 @@ services:
             MYSQL_PASSWORD: "devonly"
         ports:
             - 8081:3306
-    # mariadb:
-    #     image: mariadb:latest
-    #     container_name: mariadb
-    #     volumes:
-    #         - ./database/mysql:/var/lib/mysql
-    #     environment:
-    #         MYSQL_ROOT_PASSWORD: "devonly"
-    #         MYSQL_DATABASE: "db"
-    #         MYSQL_USER: "user"
-    #         MYSQL_PASSWORD: "devonly"
-    #     ports:
-    #         - 8087:3306
 
     phpmyadmin:
         image: phpmyadmin:latest

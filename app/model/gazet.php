@@ -500,55 +500,6 @@ trait Gazet
         ]));
     }
 
-    /**
-     * If familyInvitation approved, finalizes it, else sets it accepted.
-     */
-    private function userAcceptsInvitation($iduser, $idfamily)
-    {
-        if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) { // if already member, remove invitation
-            $this->familyInvitationRemove($iduser, $idfamily);
-            return false;
-        }
-        if (!$this->familyInvitationIsApproved($iduser, $idfamily)) {
-            $this->db->request([ // else set accepted
-                'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
-                'type' => 'ii',
-                'content' => [$idfamily, $iduser],
-            ]);
-            $data = [
-                'family' => $idfamily,
-                'type' => 12,
-                'user' => $iduser,
-            ];
-            $admin = $this->getFamilyAdmin($idfamily);
-            $this->sendData(
-                [$admin, $iduser],
-                $data
-            );
-            return ['state' => '0'];
-        }
-        $this->familyInvitationFinalize($iduser, $idfamily); // finalize familyInvitation process
-        return ['data' => $this->userGetFamilyData($iduser, $idfamily), 'state' => '1'];
-    }
-
-    /**
-     * If familyInvitation accepted, finalizes it, else sets it approved.
-     */
-    private function userApprovesInvitation($iduser, $invitee, $idfamily)
-    {
-        if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
-        $this->familyInvitationIsAccepted($invitee, $idfamily) // if accepted
-            ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
-            : $this->db->request([ // else set approved
-                'query' => 'UPDATE family_invitation SET approved = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
-                'type' => 'ii',
-                'content' => [$idfamily, $invitee],
-            ]);
-        return true;
-    }
-
     private function familyInvitationDeny($iduser, $invitee, $idfamily)
     {
     }
@@ -768,6 +719,169 @@ trait Gazet
         // TODO: discuss game types, will there be some in db or not.
 
         return true;
+    }
+
+    private function generateCover(array $parameters)
+    {
+        $cover = '
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="UTF-8" />
+                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <link rel="stylesheet" type="text/css" href="css/style.css" />
+                <title>La Gazet - template page</title>
+            </head>
+            <body class="cover">
+                <div class="content">
+                    <div class="top">
+                        <img
+                            class="logo"
+                            src="./assets/logo.svg"
+                            height="654"
+                            alt="La Gazet\', La famille se lit et se relie !"
+                        />
+                        <div class="date-url">
+                            <div class="date-url__date">
+                                <div class="date-url__day-month">31 janvier</div>
+                                <div class="date-url__year">2023</div>
+                            </div>
+                            <div class="date-url__url">www.la-gazet.com</div>
+                        </div>
+                    </div>
+                    <div class="middle">
+                        <div class="pic-ambient-text">
+                            <img height="208" src="assets/ambient-text.png" alt="" />
+                        </div>
+                        <div class="address">
+                            MME ASTRID GUTH<br />
+                            8 RUE DU CASTOR<br />
+                            RESIDENCE LES CASTORS BLANCS<br />
+                            BP24367<br />
+                            67100 HEIDWILLER<br />
+                        </div>
+                        <div class="pic-main"></div>
+                        <div class="pic-text-bottom">
+                            Nous avons des messages pour toi !
+                        </div>
+                        <div class="pic-logo-bottom">
+                            <img height="124" src="assets/feather.svg" alt="" />
+                        </div>
+                    </div>
+                    <div class="bottom">
+                        <div class="people">
+                            <div class="people__pic-container">
+                                <div class="people__pic"></div>
+                            </div>
+                            <div class="people__firstname">Jean</div>
+                            <div class="people__lastname">Guth</div>
+                        </div>
+                        <div class="people">
+                            <div class="people__pic-container">
+                                <div class="people__pic"></div>
+                            </div>
+                            <div class="people__firstname">Amelie</div>
+                            <div class="people__lastname">Niffer</div>
+                        </div>
+                        <div class="people">
+                            <div class="people__pic-container">
+                                <div class="people__pic"></div>
+                            </div>
+                            <div class="people__firstname">Christian</div>
+                            <div class="people__lastname">Monroe</div>
+                        </div>
+                        <div class="people">
+                            <div class="people__pic-container">
+                                <div class="people__pic"></div>
+                            </div>
+                            <div class="people__firstname">Marie-Elisabeth</div>
+                            <div class="people__lastname">Muckensturm</div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+        </html>';
+        return $cover;
+    }
+
+    private function generateSinglePage(array $page)
+    {
+    }
+
+    private function generatePage(array $page)
+    {
+        $html = <<<HTML
+        <html>
+            <head>
+                <meta charset="UTF-8" />
+                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <link rel="stylesheet" type="text/css" href="css/style.css" />
+                <title>La Gazet - template page</title>
+            </head>
+            <body class="page">
+                <div class="content">
+        HTML;
+        foreach ($page as $place) {
+            // get content (publication,game,song...)
+            if ($place['idpublication'] !== null) {
+                // get publication data
+                $publication = $this->getPublicationData($place['idpublication']);
+            } else if ($place['idgame'] !== null) {
+                // get game data
+                // game is an image, get it
+            } else if ($place['idsong'] !== null) {
+                // get song data
+            }
+        }
+        $html .= <<<HTML
+                </div>
+                <footer>
+                    <img
+                        height="110"
+                        src="assets/logo.svg"
+                        alt="logo de l\'application"
+                    />
+                    <span>Pour Astrid - Décembre 2022</span>
+                </footer>
+            </body>
+        </html>
+        HTML;
+        return $html;
+    }
+
+    private function generatePDF(int $idgazette)
+    {
+        // get gazette data (cover, recipient, type)
+        $data = $this->getGazetteData($idgazette);
+        // get gazette recipient data (address, display name)
+        $recipient = $this->getRecipientData($data['idrecipient']);
+        $gazette = [];
+
+        // generate cover
+        // date
+        // day-month = first day of print date + 1 month
+        // year = if month = 12, year + 1, else year
+        // address
+        $address = [strtoupper($recipient['address']['name']), strtoupper($recipient['address']['field1'])];
+        if (!empty($recipient['address']['field2'])) $address[] = strtoupper($recipient['address']['field2']);
+        if (!empty($recipient['address']['field3'])) $address[] = strtoupper($recipient['address']['field3']);
+        $address[] = $recipient['address']['postal'] . ' ' . strtoupper($recipient['address']['city']);
+        // TODO: country ? depending on how app handles other countries than France
+        $address = implode('<br>', $address);
+
+        // cover picture
+
+        $cover = $this->generateCover([]);
+        $gazette[] = $cover;
+
+        // get all gazette pages
+        $pages = $this->getGazettePages($idgazette);
+        // for each gazette page
+        foreach ($pages as $page) $gazette[] = $this->generatePage($page);
+
+        // generate pdf with all HTML pages
     }
 
     /**
@@ -1207,18 +1321,18 @@ trait Gazet
             'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND manual = 0;',
             'type' => 'i',
             'content' => [$idgazette],
-        ]) as $place) { // TODO: refact this
-            if ($place['idrecipient'] === null)
-                $pages[$place['page_num']][$place['place']] = [
-                    'idpublication' => $place['idpublication'],
-                    'idgame' => $place['idgame'],
-                    'idsong' => $place['idsong']
-                ];
-            else $pages[$place['page_num']][$place['place']]['modification'][$place['idrecipient']] = [
+        ]) as $place) {
+            // if ($place['idrecipient'] === null)
+            $pages[$place['page_num']][$place['place']] = [
                 'idpublication' => $place['idpublication'],
                 'idgame' => $place['idgame'],
                 'idsong' => $place['idsong']
             ];
+            // else $pages[$place['page_num']][$place['place']]['modification'][$place['idrecipient']] = [
+            //     'idpublication' => $place['idpublication'],
+            //     'idgame' => $place['idgame'],
+            //     'idsong' => $place['idsong']
+            // ];
         }
         return $pages;
     }
@@ -3670,7 +3784,7 @@ trait Gazet
 
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) || !$this->userIsReferent($iduser, $idrecipient) || !$this->userIsRecipient($iduser, $idrecipient)) {
+        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) && !$this->userIsReferent($iduser, $idrecipient) && !$this->userIsRecipient($iduser, $idrecipient)) {
             print('updateRecipient: FALSE' . PHP_EOL);
             return false;
         }
@@ -3862,6 +3976,55 @@ trait Gazet
             'type' => 'is',
             'content' => [$iduser, $email],
         ]);
+    }
+
+    /**
+     * If familyInvitation approved, finalizes it, else sets it accepted.
+     */
+    private function userAcceptsInvitation($iduser, $idfamily)
+    {
+        if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
+        if ($this->userIsMemberOfFamily($iduser, $idfamily)) { // if already member, remove invitation
+            $this->familyInvitationRemove($iduser, $idfamily);
+            return false;
+        }
+        if (!$this->familyInvitationIsApproved($iduser, $idfamily)) {
+            $this->db->request([ // else set accepted
+                'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idfamily, $iduser],
+            ]);
+            $data = [
+                'family' => $idfamily,
+                'type' => 12,
+                'user' => $iduser,
+            ];
+            $admin = $this->getFamilyAdmin($idfamily);
+            $this->sendData(
+                [$admin, $iduser],
+                $data
+            );
+            return ['state' => '0'];
+        }
+        $this->familyInvitationFinalize($iduser, $idfamily); // finalize familyInvitation process
+        return ['data' => $this->userGetFamilyData($iduser, $idfamily), 'state' => '1'];
+    }
+
+    /**
+     * If familyInvitation accepted, finalizes it, else sets it approved.
+     */
+    private function userApprovesInvitation($iduser, $invitee, $idfamily)
+    {
+        if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
+        $this->familyInvitationIsAccepted($invitee, $idfamily) // if accepted
+            ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
+            : $this->db->request([ // else set approved
+                'query' => 'UPDATE family_invitation SET approved = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idfamily, $invitee],
+            ]);
+        return true;
     }
 
     private function userCanReadObject(int $iduser, int $idobject)

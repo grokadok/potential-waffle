@@ -2,8 +2,6 @@
 
 namespace bopdev;
 
-require __DIR__ . '/../../vendor/autoload.php';
-
 use Error;
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Exception\MessagingException;
