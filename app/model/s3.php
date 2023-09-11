@@ -151,6 +151,9 @@ class S3Client
         }
     }
 
+    /**
+     * Returns a random binary key that doesn't exist in bucket.
+     */
     public function getRandomKey(string $ext = null, string $bucket = null)
     {
         $newKey = random_bytes(8);
@@ -251,13 +254,21 @@ class S3Client
     public function put(array $options)
     {
         try {
-            return $this->client->putObject([
+            if ($options['key'] !== null) {
+                $key = $options['key'];
+                $binKey = hex2bin(explode('.', $key)[0]);
+            } else {
+                $binKey = $this->getRandomKey($options['extension'], $options['bucket'] ?? $this->bucket);
+                $key = bin2hex($binKey) . '.' . $options['extension'];
+            }
+            $this->client->putObject([
                 'Bucket' => $options['bucket'] ?? $this->bucket,
                 'Body' => $options['body'] ?? null,
-                'Key' => $options['key'] ?? (bin2hex($this->getRandomKey($options['extension'], $options['bucket'] ?? $this->bucket)) . '.' . $options['extension']),
+                'Key' => $key,
                 'SourceFile' => $options['path'] ?? null,
                 // 'ContentLength' => $options['length'] ?? null,
             ]);
+            return ['key' => $key, 'binKey' => $binKey, 'ext' => $options['extension']];
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }

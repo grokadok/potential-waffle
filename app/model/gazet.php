@@ -723,22 +723,13 @@ trait Gazet
 
     private function generateCover(array $parameters)
     {
-        $cover = '
-        <!DOCTYPE html>
-        <html lang="en">
-            <head>
-                <meta charset="UTF-8" />
-                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <link rel="stylesheet" type="text/css" href="css/style.css" />
-                <title>La Gazet - template page</title>
-            </head>
-            <body class="cover">
+        $cover = <<<HTML
+            <div class="cover">
                 <div class="content">
                     <div class="top">
                         <img
                             class="logo"
-                            src="./assets/logo.svg"
+                            src="./assets/logo-cover.svg"
                             height="654"
                             alt="La Gazet\', La famille se lit et se relie !"
                         />
@@ -751,9 +742,9 @@ trait Gazet
                         </div>
                     </div>
                     <div class="middle">
-                        <div class="pic-ambient-text">
+                        <!-- <div class="pic-ambient-text">
                             <img height="208" src="assets/ambient-text.png" alt="" />
-                        </div>
+                        </div> -->
                         <div class="address">
                             MME ASTRID GUTH<br />
                             8 RUE DU CASTOR<br />
@@ -800,30 +791,108 @@ trait Gazet
                         </div>
                     </div>
                 </div>
-            </body>
-        </html>';
+            </div>
+        HTML;
         return $cover;
     }
 
-    private function generateSinglePage(array $page)
+    private function generateSinglePage(array $parameters)
     {
+        $page = <<<HTML
+        <div class="page">
+            <div class="content">
+                <div class="publication landscape">
+                    <div class="pics l-3a">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <div class="desc">
+                        <div class="author">
+                            <div class="avatar"></div>
+                            <div class="fullname-date">
+                                <div>
+                                    <span class="firstname">Jean</span>
+                                    <span class="lastname">Guth</span>
+                                </div>
+                                <div>19 décembre 2022</div>
+                            </div>
+                        </div>
+                        <div class="content">
+                            <h1 class="title">Titre : Lorem Ipsum</h1>
+                            <span class="text">
+                                Lorem ipsum dolor sit amet consectetur
+                                adipisicing elit. Aliquam, animi molestias
+                                repudiandae laboriosam vel porro aliquid minima
+                                qui, facere voluptate.
+                            </span>
+                            <hr class="separator" />
+                            <div class="comment">
+                                <span class="comment-author">Amélie :</span>
+                                <span class="comment-text"
+                                    >Quaerat dolor magnam quiquia labore.</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="publication portrait">
+                    <div class="pics p-3a">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <div class="desc">
+                        <div class="author">
+                            <div class="avatar"></div>
+                            <div class="fullname-date">
+                                <div class="fullname">
+                                    <span class="firstname">Amelie</span>
+                                    <span class="lastname">Niffer</span>
+                                </div>
+                                <div class="date">19 décembre 2022</div>
+                            </div>
+                        </div>
+                        <div class="content">
+                            <h1 class="title">Titre : Lorem Ipsum</h1>
+                            <span class="text">
+                                Lorem ipsum dolor sit amet consectetur
+                                adipisicing elit. Aliquam, animi molestias
+                                repudiandae laboriosam vel porro aliquid minima
+                                qui, facere voluptate.
+                            </span>
+                            <hr class="separator" />
+                            <div class="comment">
+                                <div class="comment-author">Jean</div>
+                                <span class="comment-text">
+                                    Ut consectetur quaerat ut dolor aliquam. Ut
+                                    est amet modi adipisci.
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <footer>
+                <img
+                    height="110"
+                    src="assets/logo.svg"
+                    alt="logo de l'application"
+                />
+                <span>Pour Astrid - Décembre 2022</span>
+            </footer>
+        </div>
+        HTML;
+        return $page;
     }
 
-    private function generatePage(array $page)
+    private function generatePage(array $parameters)
     {
-        $html = <<<HTML
-        <html>
-            <head>
-                <meta charset="UTF-8" />
-                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <link rel="stylesheet" type="text/css" href="css/style.css" />
-                <title>La Gazet - template page</title>
-            </head>
-            <body class="page">
-                <div class="content">
+        $page = <<<HTML
+        <div class="page">
+            <div class="content">
         HTML;
-        foreach ($page as $place) {
+        foreach ($parameters as $place) {
             // get content (publication,game,song...)
             if ($place['idpublication'] !== null) {
                 // get publication data
@@ -835,29 +904,44 @@ trait Gazet
                 // get song data
             }
         }
-        $html .= <<<HTML
-                </div>
-                <footer>
-                    <img
-                        height="110"
-                        src="assets/logo.svg"
-                        alt="logo de l\'application"
-                    />
-                    <span>Pour Astrid - Décembre 2022</span>
-                </footer>
-            </body>
-        </html>
+        $page .= <<<HTML
+            </div>
+            <footer>
+                <img
+                    height="110"
+                    src="assets/logo.svg"
+                    alt="logo de l\'application"
+                />
+                <span>Pour Astrid - Décembre 2022</span>
+            </footer>
+        </div>
         HTML;
-        return $html;
+        return $page;
     }
 
+    /**
+     * Generates PDF from gazette and returns file
+     */
     private function generatePDF(int $idgazette)
     {
+        print('@@@ Init generate pdf' . PHP_EOL);
         // get gazette data (cover, recipient, type)
         $data = $this->getGazetteData($idgazette);
+        print('@@@ generate pdf 1' . PHP_EOL);
         // get gazette recipient data (address, display name)
         $recipient = $this->getRecipientData($data['idrecipient']);
-        $gazette = [];
+        print('@@@ generate pdf 2' . PHP_EOL);
+        $gazette = <<<HTML
+        <html>
+            <head>
+                <meta charset="UTF-8" />
+                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <link rel="stylesheet" type="text/css" href=".css/style.css" />
+                <title>La Gazet</title>
+            </head>
+            <body>
+        HTML;
 
         // generate cover
         // date
@@ -871,17 +955,218 @@ trait Gazet
         // TODO: country ? depending on how app handles other countries than France
         $address = implode('<br>', $address);
 
-        // cover picture
-
+        // cover page
         $cover = $this->generateCover([]);
-        $gazette[] = $cover;
+        print('@@@ generate pdf 3' . PHP_EOL);
+        $gazette .= $cover;
 
         // get all gazette pages
         $pages = $this->getGazettePages($idgazette);
+        print('@@@ generate pdf 4' . PHP_EOL);
         // for each gazette page
-        foreach ($pages as $page) $gazette[] = $this->generatePage($page);
+        // foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
+        print('@@@ generate pdf 5' . PHP_EOL);
 
         // generate pdf with all HTML pages
+
+        $gazette .= <<<HTML
+            </body>
+        </html>
+        HTML;
+
+        $gazette = <<<HTML
+                <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+        <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+        <head>
+        <style>
+        body {
+        margin: 18pt 18pt 24pt 18pt;
+        }
+
+        * {
+        font-family: helvetica,georgia,serif;
+        font-weight: bold;
+        }
+
+        p {
+        text-align: justify;
+        font-size: 1em;
+        margin: 0.5em;
+        padding: 10px;
+        }
+        </style>
+        </head>
+        <body>
+
+
+        <h1>Lorem ipsum dolor sit amet</h1>
+        <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Donec at
+        odio vitae libero tempus convallis. Cum sociis natoque penatibus et
+        magnis dis parturient montes, nascetur ridiculus mus. Vestibulum purus
+        mauris, dapibus eu, sagittis quis, sagittis quis, mi. Morbi fringilla
+        massa quis velit. Curabitur metus massa, semper mollis, molestie vel,
+        adipiscing nec, massa. Phasellus vitae felis sed lectus dapibus
+        facilisis. In ultrices sagittis ipsum. In at est. Integer iaculis
+        turpis vel magna. Cras eu est. Integer porttitor ligula a
+        tellus. Curabitur accumsan ipsum a velit. Sed laoreet lectus quis
+        leo. Nulla pellentesque molestie ante. Quisque vestibulum est id
+        justo. Ut pellentesque ante in neque.</p>
+
+        <p>Curabitur ut diam eu dui vestibulum pharetra. Nam pellentesque, justo
+        non hendrerit venenatis, mi orci pretium mi, et vehicula leo arcu quis
+        diam. Nullam mattis laoreet quam. Morbi mollis sem ut tellus. Nam mi
+        massa, lobortis eu, sollicitudin et, iaculis et, massa. Maecenas purus
+        mauris, luctus sit amet, pharetra in, facilisis sit amet, elit. Nullam
+        vel erat tempus purus molestie suscipit. Vestibulum odio lorem,
+        sollicitudin non, volutpat sit amet, tincidunt vel, nunc. Nulla quis
+        ante vestibulum odio feugiat facilisis. Proin lorem nisl, viverra at,
+        rhoncus quis, semper nec, mi. Donec euismod enim vitae velit. Nulla
+        sed lectus. Vivamus placerat, lacus sed vehicula sagittis, arcu massa
+        adipiscing lorem, bibendum luctus nisl tortor vitae leo.</p>
+
+        <p>Etiam a mauris. Proin justo elit, accumsan sit amet, tempus et,
+        blandit id, tellus. Morbi varius, nisi id iaculis aliquam, lacus
+        ligula facilisis velit, ac pharetra ipsum augue a massa. Etiam rhoncus
+        commodo orci. Mauris ullamcorper sagittis turpis. Nullam magna libero,
+        sagittis sed, auctor faucibus, accumsan vitae, urna. Pellentesque
+        volutpat. Aliquam sapien ipsum, eleifend nec, imperdiet vitae,
+        consectetuer id, quam. Donec a urna. Suspendisse sit amet
+        velit. Curabitur quis nisi id dui viverra ornare. Sed condimentum enim
+        quis tortor. Ut condimentum, magna non tempus tincidunt, leo nibh
+        molestie tellus, vitae convallis dolor ante sed ante. Nunc et
+        metus. Phasellus ultricies. Fusce faucibus tortor sit amet mauris.</p>
+
+        <p>Aliquam enim. Duis et diam. Praesent porta, mauris quis pellentesque
+        volutpat, erat elit vulputate eros, vitae pulvinar augue velit sit
+        amet sem. Fusce eu urna eu nisi condimentum posuere. Vivamus sed
+        felis. Duis eget urna vitae eros interdum dignissim. Proin justo eros,
+        eleifend in, porttitor in, malesuada non, neque. Etiam sed
+        augue. Nulla sit amet magna. Lorem ipsum dolor sit amet, consectetuer
+        adipiscing elit. Mauris facilisis. Curabitur massa magna, pulvinar a,
+        nonummy eget, egestas vitae, mauris. Quisque vel elit sit amet lorem
+        malesuada facilisis. Vestibulum porta, metus sit amet egestas
+        interdum, urna justo euismod erat, id tristique urna leo quis
+        nibh. Morbi non erat.</p>
+
+        <p>Cras fringilla, nulla id egestas elementum, augue nunc iaculis nibh,
+        ac adipiscing nibh justo id tortor. Donec vel orci a nisi ultricies
+        aliquet. Nunc urna quam, adipiscing molestie, vehicula non,
+        condimentum non, magna. Integer magna. Donec quam metus, pulvinar id,
+        suscipit eget, euismod ac, orci. Nulla facilisi. Nullam nec
+        mauris. Morbi in mi. Etiam urna lectus, pulvinar ac, sollicitudin eu,
+        euismod ac, lectus. Fusce elit. Sed ultricies odio ac felis.</p>
+
+        <h1>Cras iaculis. Nulla facilisi.</h1>
+        <p>Cras iaculis. Nulla facilisi. Fusce vitae arcu. Integer lectus mauris,
+        ornare vel, accumsan eget, scelerisque vel, nunc. Maecenas justo urna,
+        volutpat vel, vehicula vel, ullamcorper nec, odio. Suspendisse laoreet
+        nisi sed erat. Cras convallis sollicitudin sapien. Phasellus ac erat
+        eu mi rutrum rhoncus. Morbi et velit. Morbi odio nisi, pharetra eget,
+        sollicitudin sed, aliquam at, nisl. Quisque euismod diam in
+        sapien. Integer accumsan urna in risus.</p>
+
+        <p>Proin sit amet nisl. Phasellus dui ipsum, laoreet a, pulvinar id,
+        fringilla ut, libero. In hac habitasse platea dictumst. Maecenas mi
+        magna, cursus sed, rutrum eget, molestie nec, dui. Suspendisse
+        lacus. Vivamus nibh urna, accumsan sit amet, gravida sed, convallis a,
+        leo. Cras sollicitudin orci sit amet eros. Pellentesque eu odio et
+        velit tempor dignissim. Morbi vehicula malesuada enim. Pellentesque
+        tincidunt, tellus ac fringilla tempor, justo libero interdum nunc, eu
+        sollicitudin tortor augue nec tellus. Nullam eget leo quis tellus
+        gravida faucibus. Nam gravida. Curabitur rhoncus egestas
+        nunc. Curabitur mollis, nisi sed suscipit gravida, enim felis interdum
+        justo, vel accumsan magna nunc ut libero. Ut fermentum. Fusce luctus,
+        est sit amet feugiat lobortis, nisl eros bibendum libero, ut suscipit
+        felis ligula in massa. Proin congue elit et nisi. Cras ac nisl. Nunc
+        ullamcorper neque vel diam.</p>
+
+        <h1>Ut pellentesque arcu ac lectus.</h1>
+        <p>Sed ac lorem. Ut pellentesque arcu ac lectus. Cum sociis natoque
+        penatibus et magnis dis parturient montes, nascetur ridiculus
+        mus. Pellentesque ultrices metus sollicitudin pede. Donec fermentum
+        est a velit fringilla mollis. Duis ligula. Fusce viverra laoreet
+        odio. Suspendisse sit amet ligula. Maecenas nunc velit, sagittis eu,
+        bibendum eu, placerat at, nibh. Praesent ut erat eget nisi gravida
+        imperdiet. Quisque vitae sapien. Ut eros.</p>
+
+        <p>Donec eros ligula, dignissim vel, ultricies id, mattis in, massa. Duis
+        lobortis dui nec orci. Sed ullamcorper metus non massa. Aliquam eget
+        mauris ac nulla elementum posuere. Sed porta, augue vitae rhoncus
+        aliquet, felis quam eleifend est, vitae rutrum metus arcu vel
+        lorem. Proin laoreet, mauris sit amet aliquet eleifend, nisl sem
+        molestie nisi, eu varius eros ligula non erat. Integer ac
+        sem. Suspendisse lectus. Aliquam erat volutpat. Fusce sit amet leo
+        faucibus erat molestie ultrices. Maecenas lacinia lectus eget
+        dui. Etiam porta porttitor ante. Phasellus sit amet lacus adipiscing
+        enim mollis iaculis. Fusce congue, nulla a commodo aliquam, erat dui
+        fermentum dui, pellentesque faucibus orci enim at mauris. Pellentesque
+        a diam porta magna tempor posuere. Donec lorem.</p>
+
+        <p>Sed viverra aliquam turpis. Aliquam lacus. Duis id massa. Nullam
+        ante. Suspendisse condimentum. Donec adipiscing, felis vel semper
+        sollicitudin, lacus justo pretium est, sed blandit pede risus eu
+        ante. Praesent ante nulla, fringilla id, ultrices et, feugiat a,
+        metus. Proin ac velit a metus suscipit fermentum. Integer aliquet. Sed
+        sapien nulla, placerat at, rutrum at, condimentum quis, libero. In
+        accumsan, tellus nec tincidunt malesuada, pede arcu commodo ipsum, ac
+        mattis tortor urna vitae enim. Aenean nonummy, mauris eget commodo
+        bibendum, augue sem ultrices nunc, eget rhoncus metus erat placerat
+        lectus. Aliquam mollis lectus in justo. Vivamus iaculis lacus sit amet
+        ligula. Etiam consectetuer convallis diam. Curabitur sollicitudin,
+        felis eu vehicula scelerisque, nisl urna aliquam orci, sit amet
+        laoreet mi turpis id ligula. Donec at enim non nulla adipiscing
+        dapibus. Aenean nisl.</p>
+
+        <p>Ut in lacus nec enim volutpat pellentesque. Integer euismod. In odio
+        eros, malesuada in, mattis vel, tempor nec, sem. In libero tellus,
+        varius vitae, bibendum in, elementum quis, nisl. Duis tortor. Etiam at
+        justo. Pellentesque facilisis mauris non nunc. Praesent eros mi,
+        dapibus eget, placerat ac, lobortis quis, sem. Nulla rhoncus
+        turpis. Nulla vitae mi. Proin id massa. Nunc eros.</p>
+
+        <h1>Aliquam molestie pulvinar ligula.</h1>
+        <p>Vestibulum dui risus, varius ut, semper et, consequat ultrices,
+        felis. Pellentesque iaculis urna in velit. Ut pharetra. Nunc
+        fringilla, nisi vitae fringilla placerat, enim justo semper erat,
+        mollis feugiat leo neque eu sem. Vestibulum orci urna, suscipit a,
+        accumsan nec, fringilla in, risus. Nullam ante. Nullam nec
+        eros. Nullam varius. Nulla facilisi. In auctor libero in
+        metus. Aliquam porttitor congue eros. Nulla facilisi. Mauris euismod
+        turpis ut felis. Ut nunc nisl, cursus quis, eleifend at, viverra
+        bibendum, lacus. Donec consequat lacus eu sapien. Fusce pulvinar
+        lectus quis nunc. In hac habitasse platea dictumst.</p>
+
+        <p>Aliquam molestie pulvinar ligula. Maecenas imperdiet, urna eget
+        ultrices adipiscing, nibh ante elementum neque, id molestie massa quam
+        ut nunc. Nullam porta. Phasellus a magna in sem volutpat
+        viverra. Quisque aliquet nunc ac turpis. Mauris dolor enim, viverra
+        rutrum, placerat et, laoreet et, justo. In id nulla. Donec
+        erat. Phasellus nec mi sed velit mollis cursus. Vestibulum
+        tincidunt. Praesent dui libero, facilisis eu, vulputate eget, aliquet
+        nec, ipsum. Pellentesque in nisl in mauris pretium euismod.</p>
+
+        </body> </html>
+
+        HTML;
+
+        // generate pdf with HTML
+        $pdf = $this->pdf->generate($gazette);
+        print('@@@ generate pdf 6' . PHP_EOL);
+        // store pdf in s3
+        $keys = $this->s3->put(['body' => $pdf, 'extension' => '.pdf']);
+        print('@@@ generate pdf 7' . PHP_EOL);
+        // store pdf in db
+        $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
+        print('@@@ generate pdf 8' . PHP_EOL);
+        // update gazette with pdf
+        $this->db->request([
+            'query' => 'UPDATE gazette SET pdf = ? WHERE idgazette = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$idObject, $idgazette],
+        ]);
+        print('@@@ generate pdf 9' . PHP_EOL);
+        return true;
     }
 
     /**
@@ -1680,7 +1965,7 @@ trait Gazet
     {
         return [
             ...$this->db->request([
-                'query' => 'SELECT idrecipient,display_name,iduser,referent,birthdate,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
+                'query' => 'SELECT idrecipient,idfamily,display_name,iduser,referent,birthdate,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
                 'type' => 'i',
                 'content' => [$idrecipient],
             ])[0],
@@ -3363,14 +3648,30 @@ trait Gazet
      * Set object in db and returns its ID.
      * @return int Object's ID.
      */
-    private function setS3Object(int $iduser, array $object)
+    private function setS3Object(array $object)
     {
         $idobject = $this->getS3ObjectIdFromKey($object['key']);
         if ($idobject) return $idobject;
+        $into = '';
+        $values = '';
+        $type = '';
+        $content = [];
+        if ($object['family'] !== null) {
+            $into .= ',family';
+            $values .= ',?';
+            $type .= 'i';
+            $content[] = $object['family'];
+        }
+        if ($object['owner'] !== null) {
+            $into .= ',owner';
+            $values .= ',?';
+            $type .= 'i';
+            $content[] = $object['owner'];
+        }
         $this->db->request([
-            'query' => 'INSERT INTO s3 (name,ext,owner) VALUES (?,?,?);',
-            'type' => 'ssi',
-            'content' => [$object['binKey'], $object['ext'], $iduser],
+            'query' => 'INSERT INTO s3 (name,ext' . $into . ') VALUES (?,?' . $values . ');',
+            'type' => 'ss' . $type,
+            'content' => [$object['binKey'], $object['ext'], ...$content],
         ]);
         return $idobject = $this->getS3ObjectIdFromKey($object['binKey']);
     }
@@ -3398,7 +3699,8 @@ trait Gazet
     private function storeS3Object(int $iduser, string $key)
     {
         $newObject = $this->s3->move($key);
-        return $this->setS3Object($iduser, $newObject);
+        $newObject['owner'] = $iduser;
+        return $this->setS3Object($newObject);
     }
 
     private function testerProcess(int $iduser)
@@ -3657,6 +3959,9 @@ trait Gazet
         if ($overflow) {
             // TODO: notification to admin/referent if gazette overflows, and suggest to take a bigger gazette type
         }
+
+        // generate pdf
+        $this->generatePdf($idgazette);
     }
 
     /**
@@ -3879,9 +4184,10 @@ trait Gazet
     {
         if (!$this->userIsReferent($iduser, $idrecipient)) return false;
         $newObject = $this->s3->move($key);
+        $newObject['owner'] = $iduser;
         $idobject = $this->getRecipientAvatar($idrecipient);
         if ($idobject) $this->removeS3Object($idobject);
-        $idobject = $this->setS3Object($iduser, $newObject);
+        $idobject = $this->setS3Object($newObject);
         $this->db->request([
             'query' => 'UPDATE recipient SET avatar = ? WHERE idrecipient = ? LIMIT 1;',
             'type' => 'ii',
@@ -3939,8 +4245,9 @@ trait Gazet
     private function updateUserAvatar(int $iduser, string $key)
     {
         $newObject = $this->s3->move($key);
+        $newObject['owner'] = $iduser;
         $oldObject = $this->getUserAvatar($iduser);
-        $idobject = $this->setS3Object($iduser, $newObject);
+        $idobject = $this->setS3Object($newObject);
         $this->db->request([
             'query' => 'UPDATE user SET avatar = ? WHERE iduser = ? LIMIT 1;',
             'type' => 'ii',

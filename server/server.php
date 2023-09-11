@@ -22,6 +22,7 @@ use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
 use bopdev\DBRequest;
+use bopdev\PDF;
 use bopdev\Messaging;
 use bopdev\S3Client;
 use Throwable;
@@ -37,6 +38,7 @@ class FWServer
 
     public function __construct(
         private $db = new DBRequest(),
+        private $pdf = new PDF(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
     ) {
@@ -273,9 +275,7 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
-                // $begin = microtime();
                 $jwt = $this->JWTVerify($request->header['authorization'], $this->appname);
-                // print(PHP_EOL . '### CHECK TIME' . PHP_EOL . (microtime() - $begin) . PHP_EOL . '###' . PHP_EOL);
                 if (!$jwt) {
                     $response->status(401);
                     return $response->end();
