@@ -6,11 +6,13 @@ class Browserless
 {
     private $blserver;
     private $path;
+    private $port;
 
     public function __construct()
     {
         $this->blserver = getenv('BROWSERLESS_HOST');
         $this->path = getenv('SERVER_URL');
+        $this->port = intval(getenv('BROWSERLESS_PORT'));
     }
 
     public function pdfFromHtml(string $html)
@@ -25,7 +27,7 @@ class Browserless
             print('### pdfFromHtml 1' . PHP_EOL);
             curl_setopt_array($ch, [
                 CURLOPT_URL => $this->blserver . '/pdf',
-                CURLOPT_PORT => 8083,
+                CURLOPT_PORT => $this->port,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_TIMEOUT => 30,
@@ -62,12 +64,12 @@ class Browserless
     public function pdfFromUrl(string $url)
     {
         try {
-            print('### pdfFromUrl: ' . $this->path . $url . PHP_EOL);
+            print('### pdfFromUrl: ' . $this->path . '/' . $url . PHP_EOL);
             $path = json_encode($this->path . '/' . $url);
             $ch = curl_init();
             curl_setopt_array($ch, [
                 CURLOPT_URL => $this->blserver . '/pdf',
-                CURLOPT_PORT => 8083,
+                CURLOPT_PORT => $this->port,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_TIMEOUT => 30,
