@@ -5,7 +5,7 @@ RUN mkdir app
 RUN mkdir app/model
 RUN mkdir app/jwt
 RUN mkdir app/pdf
-    mkdir public
+RUN mkdir public
 COPY /server ./
 COPY /public ./public
 COPY /app/model ./app/model
