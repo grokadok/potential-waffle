@@ -3,6 +3,7 @@
 namespace bopdev;
 
 use DateTime;
+use Throwable;
 
 trait Gazet
 {
@@ -972,81 +973,88 @@ trait Gazet
      */
     private function generatePDF(int $idgazette)
     {
-        print('@@@ Init generate pdf' . PHP_EOL);
-        $serverPath = getenv('SERVER_URL');
-        // get gazette data (cover, recipient, type)
-        $data = $this->getGazetteData($idgazette);
-        $data['idgazette'] = $idgazette;
-        print('@@@ generate pdf 1' . PHP_EOL);
-        // get gazette recipient data (address, display name)
-        $recipient = $this->getRecipientData($data['idrecipient']);
-        print('@@@ generate pdf 2' . PHP_EOL);
-        $gazette = <<<HTML
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <meta charset="UTF-8" />
-                <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <link rel="stylesheet" type="text/css" href="css/style.css" />
-                <title>La Gazet</title>
-            </head>
-            <body>
-        HTML;
+        try {
+            print('@@@ Init generate pdf' . PHP_EOL);
+            $serverPath = getenv('SERVER_URL');
+            // get gazette data (cover, recipient, type)
+            $data = $this->getGazetteData($idgazette);
+            $data['idgazette'] = $idgazette;
+            print('@@@ generate pdf 1' . PHP_EOL);
+            // get gazette recipient data (address, display name)
+            $recipient = $this->getRecipientData($data['idrecipient']);
+            print('@@@ generate pdf 2' . PHP_EOL);
+            $gazette = <<<HTML
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <meta charset="UTF-8" />
+                    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                    <link rel="stylesheet" type="text/css" href="css/style.css" />
+                    <title>La Gazet</title>
+                </head>
+                <body>
+            HTML;
 
-        // cover page
-        $cover = $this->generateCover($data, $recipient);
-        print('@@@ generate pdf 3' . PHP_EOL);
-        $gazette .= $cover;
+            // cover page
+            $cover = $this->generateCover($data, $recipient);
+            print('@@@ generate pdf 3' . PHP_EOL);
+            $gazette .= $cover;
 
-        // get all gazette pages
-        $pages = $this->getGazettePages($idgazette);
-        print('@@@ generate pdf 4' . PHP_EOL);
-        // for each gazette page
-        foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
-        print('@@@ generate pdf 5' . PHP_EOL);
+            // get all gazette pages
+            $pages = $this->getGazettePages($idgazette);
+            print('@@@ generate pdf 4' . PHP_EOL);
+            // for each gazette page
+            foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
+            print('@@@ generate pdf 5' . PHP_EOL);
 
-        $gazette .= <<<HTML
-            </body>
-        </html>
-        HTML;
+            $gazette .= <<<HTML
+                </body>
+            </html>
+            HTML;
 
 
-        // generate random file name
-        $filename = bin2hex(random_bytes(16)) . '.html';
-        // save $gazette string into html file
-        file_put_contents('./public/' . $filename, $gazette);
+            // generate random file name
+            $filename = bin2hex(random_bytes(16)) . '.html';
+            // save $gazette string into html file
+            file_put_contents('./public/' . $filename, $gazette);
 
-        // get assets (images, fonts, css...) to temp folder
+            // get assets (images, fonts, css...) to temp folder
 
-        // generate pdf from HTML file
-        // $pdf = $this->chrome->generatePDF($gazette);
-        // $pdf = $this->browserless->pdfFromHtml($gazette);
-        $pdf = $this->browserless->pdfFromUrl($filename);
-        print('@@@ generate pdf 6' . PHP_EOL);
-        // store in local storage
-        $file = './file.pdf';
-        file_put_contents($file, $pdf);
+            // generate pdf from HTML file
+            // $pdf = $this->chrome->generatePDF($gazette);
+            // $pdf = $this->browserless->pdfFromHtml($gazette);
+            $pdf = $this->browserless->pdfFromUrl($filename);
+            print('@@@ generate pdf 6' . PHP_EOL);
+            // store in local storage
+            $file = './file.pdf';
+            file_put_contents($file, $pdf);
 
-        // remove local html file after 5 seconds
-        // sleep(5);
-        // unlink('./public/' . $filename);
-        // store pdf in s3
-        $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
-        // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
-        print('@@@ generate pdf 7' . PHP_EOL);
-        // store pdf in db
-        $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
-        print('@@@ generate pdf 8' . PHP_EOL);
-        if (!empty($data['pdf'])) $this->removeS3Object($data['pdf']);
-        // update gazette with pdf
-        $this->db->request([
-            'query' => 'UPDATE gazette SET pdf = ? WHERE idgazette = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$idObject, $idgazette],
-        ]);
-        print('@@@ generate pdf 9' . PHP_EOL);
-        return true;
+            // remove local html file after 5 seconds
+            // sleep(5);
+            // unlink('./public/' . $filename);
+            // store pdf in s3
+            $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
+            // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
+            print('@@@ generate pdf 7' . PHP_EOL);
+            // store pdf in db
+            $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
+            print('@@@ generate pdf 8' . PHP_EOL);
+            if (!empty($data['pdf'])) $this->removeS3Object($data['pdf']);
+            // update gazette with pdf
+            $this->db->request([
+                'query' => 'UPDATE gazette SET pdf = ? WHERE idgazette = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idObject, $idgazette],
+            ]);
+            print('@@@ generate pdf 9' . PHP_EOL);
+            return true;
+        } catch (Throwable $e) {
+            print('@@@ generate pdf error' . PHP_EOL);
+            print($e->getMessage() . PHP_EOL);
+            print($e->getTraceAsString() . PHP_EOL);
+            return false;
+        }
     }
 
     /**

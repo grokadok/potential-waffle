@@ -11,7 +11,7 @@ trait Http
     use Gazet;
     private function task($post)
     {
-        var_dump($post);
+        // var_dump($post);
         // var_dump($post['f']);
         try {
             $f = intval($post["f"]);
