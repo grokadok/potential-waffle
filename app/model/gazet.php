@@ -1025,6 +1025,7 @@ trait Gazet
             // $pdf = $this->chrome->generatePDF($gazette);
             // $pdf = $this->browserless->pdfFromHtml($gazette);
             $pdf = $this->browserless->pdfFromUrl($filename);
+            if (empty($pdf)) throw new Throwable('PDF is empty');
             print('@@@ generate pdf 6' . PHP_EOL);
             // store in local storage
             $file = './file.pdf';
@@ -1032,7 +1033,7 @@ trait Gazet
 
             // remove local html file after 5 seconds
             // sleep(5);
-            // unlink('./public/' . $filename);
+            unlink('./public/' . $filename);
             // store pdf in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
             // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
@@ -3549,13 +3550,13 @@ trait Gazet
         $values = '';
         $type = '';
         $content = [];
-        if ($object['family'] !== null) {
+        if (!empty($object['family'])) {
             $into .= ',family';
             $values .= ',?';
             $type .= 'i';
             $content[] = $object['family'];
         }
-        if ($object['owner'] !== null) {
+        if (!empty($object['owner'])) {
             $into .= ',owner';
             $values .= ',?';
             $type .= 'i';

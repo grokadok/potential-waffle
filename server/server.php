@@ -276,13 +276,13 @@ class FWServer
         ];
 
         if (isset($static[$type])) {
-            print("static file request: " . $file . PHP_EOL);
+            // print("static file request: " . $file . PHP_EOL);
             if (file_exists($file)) {
-                print('file exists' . PHP_EOL);
+                // print('file exists' . PHP_EOL);
                 $response->header("Content-Type", $static[$type]);
                 $response->sendfile($file);
             } else {
-                print('file does not exist' . PHP_EOL);
+                // print('file does not exist' . PHP_EOL);
                 $response->status(404);
                 $response->end();
             }

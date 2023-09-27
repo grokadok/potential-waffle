@@ -269,7 +269,7 @@ class S3Client
     public function put(array $options)
     {
         try {
-            if ($options['key'] !== null) {
+            if (isset($options['key'])) {
                 $key = $options['key'];
                 $binKey = hex2bin(explode('.', $key)[0]);
             } else {
