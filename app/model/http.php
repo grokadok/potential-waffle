@@ -11,12 +11,13 @@ trait Http
     use Gazet;
     private function task($post)
     {
-        // var_dump($post);
+        var_dump($post);
         // var_dump($post['f']);
         try {
             $f = intval($post["f"]);
             $responseType = 'application/json';
             $iduser = $this->getUserIdFromFirebase($post['sub']);
+            $responseContent = [];
 
             /////////////////////////////////////////////////////
             // LOGIN FROM FIREBASE (1)
@@ -472,6 +473,64 @@ trait Http
 
 
             /////////////////////////////////////////////////////
+            // SET BUCKET CORS (991)
+            /////////////////////////////////////////////////////
+
+            if ($f === 991) {
+                var_dump($this->s3->setBucketCors('gazet', [
+                    [
+                        'AllowedHeaders' => ['*'],
+                        'AllowedMethods' => ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
+                        'AllowedOrigins' => ['*'],
+                        'ExposeHeaders' => [],
+                        'MaxAgeSeconds' => 3000,
+                    ],
+                ]));
+            }
+
+            /////////////////////////////////////////////////////
+            // GET BUCKET CORS (992)
+            /////////////////////////////////////////////////////
+
+            if ($f === 992) {
+                var_dump($this->s3->getBucketCors('gazet'));
+            }
+
+            /////////////////////////////////////////////////////
+            // BROWSERLESS GENERATE TEST PDF (993)
+            /////////////////////////////////////////////////////
+
+            if ($f === 993) {
+                var_dump($this->browserless->pdfFromUrl('https://www.google.com'));
+            }
+
+            /////////////////////////////////////////////////////
+            // CHROMIUM CHECK BINARIES (994)
+            /////////////////////////////////////////////////////
+
+            if ($f === 994) {
+                $path = getenv('CHROME_PATH');
+                print('$$$##@@ Path: ' . $path . PHP_EOL);
+                // print('%##%$#@$ Files: ' . count(scandir('./')));
+                var_dump(scandir('/var/www'));
+                // foreach ( as $file) {
+                //     print($file . PHP_EOL);
+                // }
+            }
+
+            /////////////////////////////////////////////////////
+            // GENERATE PDF (995)
+            /////////////////////////////////////////////////////
+
+            if ($f === 995) {
+                $idgazette = $this->db->request([
+                    'query' => 'SELECT idgazette FROM gazette LIMIT 1;',
+                    'array' => true,
+                ])[0][0];
+                $this->generatePDF($idgazette);
+            }
+
+            /////////////////////////////////////////////////////
             // SEND TEST NOTIFICATION (996)
             /////////////////////////////////////////////////////
 
@@ -489,7 +548,7 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // CLEAN S3 FROM UNUSED ITEMS (997)
+            // LIST S3 OBJECTS (997)
             /////////////////////////////////////////////////////
 
             if ($f === 997) {

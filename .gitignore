@@ -6,6 +6,11 @@ ssl.*
 /*lock*
 .clever.json
 /config
+/app/chat
+/app/calendar
+/app/model/dompdf.php
+/app/model/chrome.php
+/public/*.html
 /server/*
 !/server/server.php
 !/server/composer.json

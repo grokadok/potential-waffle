@@ -16,7 +16,7 @@ class S3Client
     {
         $this->client = new S3([
             'version' => 'latest',
-            'region' => 'us-east-2',
+            'region' => getenv('CELLAR_ADDON_REGION'),
             'endpoint' => 'https://' . getenv('CELLAR_ADDON_HOST')
         ]);
         $this->bucket = getenv('CELLAR_ADDON_BUCKET');
@@ -139,6 +139,17 @@ class S3Client
         }
     }
 
+    public function getBucketCors(string $bucket)
+    {
+        try {
+            return $this->client->getBucketCors([
+                'Bucket' => $bucket,
+            ]);
+        } catch (S3Exception $e) {
+            print($e->getMessage() . PHP_EOL);
+        }
+    }
+
     public function getEtag(string $key, string $bucket = null)
     {
         try {
@@ -226,7 +237,9 @@ class S3Client
                 'Key' => $key,
             ]);
             $request = $this->client->createPresignedRequest($cmd, $expiration);
-            return (string)$request->getUri();
+            $uri = $request->getUri();
+            print('### presignedUriGet: ' . $uri . PHP_EOL);
+            return (string)$uri;
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }
@@ -245,7 +258,9 @@ class S3Client
                 'ContentType' => $options['type'] ?? 'image/jpeg',
             ]);
             $request = $this->client->createPresignedRequest($cmd, $options['expiration'] ?? '+5 minutes')->withMethod('PUT');
-            return ['bucket' => $options['bucket'] ?? $this->bucket, 'key' => $key, 'uri' => $request->getUri()];
+            $uri = $request->getUri();
+            print('### presignedUriPut: ' . $uri . PHP_EOL);
+            return ['bucket' => $options['bucket'] ?? $this->bucket, 'key' => $key, 'uri' => $uri];
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }
@@ -269,6 +284,20 @@ class S3Client
                 // 'ContentLength' => $options['length'] ?? null,
             ]);
             return ['key' => $key, 'binKey' => $binKey, 'ext' => $options['extension']];
+        } catch (S3Exception $e) {
+            print($e->getMessage() . PHP_EOL);
+        }
+    }
+
+    public function setBucketCors(string $bucket, array $corsRules)
+    {
+        try {
+            return $this->client->putBucketCors([
+                'Bucket' => $bucket,
+                'CORSConfiguration' => [
+                    'CORSRules' => $corsRules,
+                ],
+            ]);
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
         }

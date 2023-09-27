@@ -721,22 +721,66 @@ trait Gazet
         return true;
     }
 
-    private function generateCover(array $parameters)
+    private function generateCover(array $data, array $recipient)
     {
+        // date
+        // $date = new DateTime($data['print_date']);
+        // $date->setLocale('fr_FR');
+        $date = date('j F', strtotime($data['print_date']));
+        $year = substr($data['print_date'], 0, 4);
+        // day-month = first day of print date + 1 month
+        // year = if month = 12, year + 1, else year
+        // address
+        $address = [strtoupper($recipient['address']['name']), strtoupper($recipient['address']['field1'])];
+        if (!empty($recipient['address']['field2'])) $address[] = strtoupper($recipient['address']['field2']);
+        if (!empty($recipient['address']['field3'])) $address[] = strtoupper($recipient['address']['field3']);
+        $address[] = $recipient['address']['postal'] . ' ' . strtoupper($recipient['address']['city']);
+        // TODO: country ? depending on how app handles other countries than France
+        $address = implode('<br>', $address);
+
+        // get cover img
+        $coverImg = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($data['cover_picture']));
+
+        // get bottom page writers
+        $writers = $this->getCoverWriters($data['idgazette']);
+        $coverWriters = '';
+        $message = '';
+        if (!empty($writers)) {
+            $message = 'Nous avons des messages pour toi !';
+            $i = 0;
+            foreach ($writers as $writer) {
+                if ($i < 4) {
+                    // get user data
+                    $user = $this->getUserData($writers[$i]);
+                    $avatar = $user['avatar'] != null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($user['avatar'])) : 'img/user-solid.svg';
+                    $coverWriters .= <<<HTML
+                        <div class="people">
+                            <div class="people__pic-container">
+                                <div class="people__pic">
+                                    <img src="$avatar" alt="" />
+                                </div>
+                            </div>
+                            <div class="people__firstname">{$user['first_name']}</div>
+                            <div class="people__lastname">{$user['last_name']}</div>
+                        </div>
+                    HTML;
+                    $i++;
+                }
+            }
+        }
         $cover = <<<HTML
             <div class="cover">
                 <div class="content">
                     <div class="top">
                         <img
                             class="logo"
-                            src="./assets/logo-cover.svg"
-                            height="654"
+                            src="img/logo-cover.svg"
                             alt="La Gazet\', La famille se lit et se relie !"
                         />
                         <div class="date-url">
                             <div class="date-url__date">
-                                <div class="date-url__day-month">31 janvier</div>
-                                <div class="date-url__year">2023</div>
+                                <div class="date-url__day-month">$date</div>
+                                <div class="date-url__year">$year</div>
                             </div>
                             <div class="date-url__url">www.la-gazet.com</div>
                         </div>
@@ -746,22 +790,26 @@ trait Gazet
                             <img height="208" src="assets/ambient-text.png" alt="" />
                         </div> -->
                         <div class="address">
-                            MME ASTRID GUTH<br />
+                            $address
+                            <!-- MME ASTRID GUTH<br />
                             8 RUE DU CASTOR<br />
                             RESIDENCE LES CASTORS BLANCS<br />
                             BP24367<br />
-                            67100 HEIDWILLER<br />
+                            67100 HEIDWILLER<br /> -->
                         </div>
-                        <div class="pic-main"></div>
+                        <div class="pic-main">
+                            <img src="$coverImg" alt="" />
+                        </div>
                         <div class="pic-text-bottom">
-                            Nous avons des messages pour toi !
+                            $message
                         </div>
                         <div class="pic-logo-bottom">
-                            <img height="124" src="assets/feather.svg" alt="" />
+                            <img height="124" src="img/feather.svg" alt="" />
                         </div>
                     </div>
                     <div class="bottom">
-                        <div class="people">
+                        $coverWriters
+                        <!-- <div class="people">
                             <div class="people__pic-container">
                                 <div class="people__pic"></div>
                             </div>
@@ -788,7 +836,7 @@ trait Gazet
                             </div>
                             <div class="people__firstname">Marie-Elisabeth</div>
                             <div class="people__lastname">Muckensturm</div>
-                        </div>
+                        </div> -->
                     </div>
                 </div>
             </div>
@@ -876,7 +924,7 @@ trait Gazet
             <footer>
                 <img
                     height="110"
-                    src="assets/logo.svg"
+                    src="img/logo.svg"
                     alt="logo de l'application"
                 />
                 <span>Pour Astrid - Décembre 2022</span>
@@ -909,7 +957,7 @@ trait Gazet
             <footer>
                 <img
                     height="110"
-                    src="assets/logo.svg"
+                    src="__DIR__/logo.svg"
                     alt="logo de l\'application"
                 />
                 <span>Pour Astrid - Décembre 2022</span>
@@ -925,38 +973,29 @@ trait Gazet
     private function generatePDF(int $idgazette)
     {
         print('@@@ Init generate pdf' . PHP_EOL);
+        $serverPath = getenv('SERVER_URL');
         // get gazette data (cover, recipient, type)
         $data = $this->getGazetteData($idgazette);
+        $data['idgazette'] = $idgazette;
         print('@@@ generate pdf 1' . PHP_EOL);
         // get gazette recipient data (address, display name)
         $recipient = $this->getRecipientData($data['idrecipient']);
         print('@@@ generate pdf 2' . PHP_EOL);
         $gazette = <<<HTML
+        <!DOCTYPE html>
         <html>
             <head>
                 <meta charset="UTF-8" />
                 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <link rel="stylesheet" type="text/css" href=".css/style.css" />
+                <link rel="stylesheet" type="text/css" href="css/style.css" />
                 <title>La Gazet</title>
             </head>
             <body>
         HTML;
 
-        // generate cover
-        // date
-        // day-month = first day of print date + 1 month
-        // year = if month = 12, year + 1, else year
-        // address
-        $address = [strtoupper($recipient['address']['name']), strtoupper($recipient['address']['field1'])];
-        if (!empty($recipient['address']['field2'])) $address[] = strtoupper($recipient['address']['field2']);
-        if (!empty($recipient['address']['field3'])) $address[] = strtoupper($recipient['address']['field3']);
-        $address[] = $recipient['address']['postal'] . ' ' . strtoupper($recipient['address']['city']);
-        // TODO: country ? depending on how app handles other countries than France
-        $address = implode('<br>', $address);
-
         // cover page
-        $cover = $this->generateCover([]);
+        $cover = $this->generateCover($data, $recipient);
         print('@@@ generate pdf 3' . PHP_EOL);
         $gazette .= $cover;
 
@@ -964,201 +1003,42 @@ trait Gazet
         $pages = $this->getGazettePages($idgazette);
         print('@@@ generate pdf 4' . PHP_EOL);
         // for each gazette page
-        // foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
+        foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
         print('@@@ generate pdf 5' . PHP_EOL);
-
-        // generate pdf with all HTML pages
 
         $gazette .= <<<HTML
             </body>
         </html>
         HTML;
 
-        $gazette = <<<HTML
-                <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-        <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
-        <head>
-        <style>
-        body {
-        margin: 18pt 18pt 24pt 18pt;
-        }
 
-        * {
-        font-family: helvetica,georgia,serif;
-        font-weight: bold;
-        }
+        // generate random file name
+        $filename = bin2hex(random_bytes(16)) . '.html';
+        // save $gazette string into html file
+        file_put_contents('./public/' . $filename, $gazette);
 
-        p {
-        text-align: justify;
-        font-size: 1em;
-        margin: 0.5em;
-        padding: 10px;
-        }
-        </style>
-        </head>
-        <body>
+        // get assets (images, fonts, css...) to temp folder
 
-
-        <h1>Lorem ipsum dolor sit amet</h1>
-        <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Donec at
-        odio vitae libero tempus convallis. Cum sociis natoque penatibus et
-        magnis dis parturient montes, nascetur ridiculus mus. Vestibulum purus
-        mauris, dapibus eu, sagittis quis, sagittis quis, mi. Morbi fringilla
-        massa quis velit. Curabitur metus massa, semper mollis, molestie vel,
-        adipiscing nec, massa. Phasellus vitae felis sed lectus dapibus
-        facilisis. In ultrices sagittis ipsum. In at est. Integer iaculis
-        turpis vel magna. Cras eu est. Integer porttitor ligula a
-        tellus. Curabitur accumsan ipsum a velit. Sed laoreet lectus quis
-        leo. Nulla pellentesque molestie ante. Quisque vestibulum est id
-        justo. Ut pellentesque ante in neque.</p>
-
-        <p>Curabitur ut diam eu dui vestibulum pharetra. Nam pellentesque, justo
-        non hendrerit venenatis, mi orci pretium mi, et vehicula leo arcu quis
-        diam. Nullam mattis laoreet quam. Morbi mollis sem ut tellus. Nam mi
-        massa, lobortis eu, sollicitudin et, iaculis et, massa. Maecenas purus
-        mauris, luctus sit amet, pharetra in, facilisis sit amet, elit. Nullam
-        vel erat tempus purus molestie suscipit. Vestibulum odio lorem,
-        sollicitudin non, volutpat sit amet, tincidunt vel, nunc. Nulla quis
-        ante vestibulum odio feugiat facilisis. Proin lorem nisl, viverra at,
-        rhoncus quis, semper nec, mi. Donec euismod enim vitae velit. Nulla
-        sed lectus. Vivamus placerat, lacus sed vehicula sagittis, arcu massa
-        adipiscing lorem, bibendum luctus nisl tortor vitae leo.</p>
-
-        <p>Etiam a mauris. Proin justo elit, accumsan sit amet, tempus et,
-        blandit id, tellus. Morbi varius, nisi id iaculis aliquam, lacus
-        ligula facilisis velit, ac pharetra ipsum augue a massa. Etiam rhoncus
-        commodo orci. Mauris ullamcorper sagittis turpis. Nullam magna libero,
-        sagittis sed, auctor faucibus, accumsan vitae, urna. Pellentesque
-        volutpat. Aliquam sapien ipsum, eleifend nec, imperdiet vitae,
-        consectetuer id, quam. Donec a urna. Suspendisse sit amet
-        velit. Curabitur quis nisi id dui viverra ornare. Sed condimentum enim
-        quis tortor. Ut condimentum, magna non tempus tincidunt, leo nibh
-        molestie tellus, vitae convallis dolor ante sed ante. Nunc et
-        metus. Phasellus ultricies. Fusce faucibus tortor sit amet mauris.</p>
-
-        <p>Aliquam enim. Duis et diam. Praesent porta, mauris quis pellentesque
-        volutpat, erat elit vulputate eros, vitae pulvinar augue velit sit
-        amet sem. Fusce eu urna eu nisi condimentum posuere. Vivamus sed
-        felis. Duis eget urna vitae eros interdum dignissim. Proin justo eros,
-        eleifend in, porttitor in, malesuada non, neque. Etiam sed
-        augue. Nulla sit amet magna. Lorem ipsum dolor sit amet, consectetuer
-        adipiscing elit. Mauris facilisis. Curabitur massa magna, pulvinar a,
-        nonummy eget, egestas vitae, mauris. Quisque vel elit sit amet lorem
-        malesuada facilisis. Vestibulum porta, metus sit amet egestas
-        interdum, urna justo euismod erat, id tristique urna leo quis
-        nibh. Morbi non erat.</p>
-
-        <p>Cras fringilla, nulla id egestas elementum, augue nunc iaculis nibh,
-        ac adipiscing nibh justo id tortor. Donec vel orci a nisi ultricies
-        aliquet. Nunc urna quam, adipiscing molestie, vehicula non,
-        condimentum non, magna. Integer magna. Donec quam metus, pulvinar id,
-        suscipit eget, euismod ac, orci. Nulla facilisi. Nullam nec
-        mauris. Morbi in mi. Etiam urna lectus, pulvinar ac, sollicitudin eu,
-        euismod ac, lectus. Fusce elit. Sed ultricies odio ac felis.</p>
-
-        <h1>Cras iaculis. Nulla facilisi.</h1>
-        <p>Cras iaculis. Nulla facilisi. Fusce vitae arcu. Integer lectus mauris,
-        ornare vel, accumsan eget, scelerisque vel, nunc. Maecenas justo urna,
-        volutpat vel, vehicula vel, ullamcorper nec, odio. Suspendisse laoreet
-        nisi sed erat. Cras convallis sollicitudin sapien. Phasellus ac erat
-        eu mi rutrum rhoncus. Morbi et velit. Morbi odio nisi, pharetra eget,
-        sollicitudin sed, aliquam at, nisl. Quisque euismod diam in
-        sapien. Integer accumsan urna in risus.</p>
-
-        <p>Proin sit amet nisl. Phasellus dui ipsum, laoreet a, pulvinar id,
-        fringilla ut, libero. In hac habitasse platea dictumst. Maecenas mi
-        magna, cursus sed, rutrum eget, molestie nec, dui. Suspendisse
-        lacus. Vivamus nibh urna, accumsan sit amet, gravida sed, convallis a,
-        leo. Cras sollicitudin orci sit amet eros. Pellentesque eu odio et
-        velit tempor dignissim. Morbi vehicula malesuada enim. Pellentesque
-        tincidunt, tellus ac fringilla tempor, justo libero interdum nunc, eu
-        sollicitudin tortor augue nec tellus. Nullam eget leo quis tellus
-        gravida faucibus. Nam gravida. Curabitur rhoncus egestas
-        nunc. Curabitur mollis, nisi sed suscipit gravida, enim felis interdum
-        justo, vel accumsan magna nunc ut libero. Ut fermentum. Fusce luctus,
-        est sit amet feugiat lobortis, nisl eros bibendum libero, ut suscipit
-        felis ligula in massa. Proin congue elit et nisi. Cras ac nisl. Nunc
-        ullamcorper neque vel diam.</p>
-
-        <h1>Ut pellentesque arcu ac lectus.</h1>
-        <p>Sed ac lorem. Ut pellentesque arcu ac lectus. Cum sociis natoque
-        penatibus et magnis dis parturient montes, nascetur ridiculus
-        mus. Pellentesque ultrices metus sollicitudin pede. Donec fermentum
-        est a velit fringilla mollis. Duis ligula. Fusce viverra laoreet
-        odio. Suspendisse sit amet ligula. Maecenas nunc velit, sagittis eu,
-        bibendum eu, placerat at, nibh. Praesent ut erat eget nisi gravida
-        imperdiet. Quisque vitae sapien. Ut eros.</p>
-
-        <p>Donec eros ligula, dignissim vel, ultricies id, mattis in, massa. Duis
-        lobortis dui nec orci. Sed ullamcorper metus non massa. Aliquam eget
-        mauris ac nulla elementum posuere. Sed porta, augue vitae rhoncus
-        aliquet, felis quam eleifend est, vitae rutrum metus arcu vel
-        lorem. Proin laoreet, mauris sit amet aliquet eleifend, nisl sem
-        molestie nisi, eu varius eros ligula non erat. Integer ac
-        sem. Suspendisse lectus. Aliquam erat volutpat. Fusce sit amet leo
-        faucibus erat molestie ultrices. Maecenas lacinia lectus eget
-        dui. Etiam porta porttitor ante. Phasellus sit amet lacus adipiscing
-        enim mollis iaculis. Fusce congue, nulla a commodo aliquam, erat dui
-        fermentum dui, pellentesque faucibus orci enim at mauris. Pellentesque
-        a diam porta magna tempor posuere. Donec lorem.</p>
-
-        <p>Sed viverra aliquam turpis. Aliquam lacus. Duis id massa. Nullam
-        ante. Suspendisse condimentum. Donec adipiscing, felis vel semper
-        sollicitudin, lacus justo pretium est, sed blandit pede risus eu
-        ante. Praesent ante nulla, fringilla id, ultrices et, feugiat a,
-        metus. Proin ac velit a metus suscipit fermentum. Integer aliquet. Sed
-        sapien nulla, placerat at, rutrum at, condimentum quis, libero. In
-        accumsan, tellus nec tincidunt malesuada, pede arcu commodo ipsum, ac
-        mattis tortor urna vitae enim. Aenean nonummy, mauris eget commodo
-        bibendum, augue sem ultrices nunc, eget rhoncus metus erat placerat
-        lectus. Aliquam mollis lectus in justo. Vivamus iaculis lacus sit amet
-        ligula. Etiam consectetuer convallis diam. Curabitur sollicitudin,
-        felis eu vehicula scelerisque, nisl urna aliquam orci, sit amet
-        laoreet mi turpis id ligula. Donec at enim non nulla adipiscing
-        dapibus. Aenean nisl.</p>
-
-        <p>Ut in lacus nec enim volutpat pellentesque. Integer euismod. In odio
-        eros, malesuada in, mattis vel, tempor nec, sem. In libero tellus,
-        varius vitae, bibendum in, elementum quis, nisl. Duis tortor. Etiam at
-        justo. Pellentesque facilisis mauris non nunc. Praesent eros mi,
-        dapibus eget, placerat ac, lobortis quis, sem. Nulla rhoncus
-        turpis. Nulla vitae mi. Proin id massa. Nunc eros.</p>
-
-        <h1>Aliquam molestie pulvinar ligula.</h1>
-        <p>Vestibulum dui risus, varius ut, semper et, consequat ultrices,
-        felis. Pellentesque iaculis urna in velit. Ut pharetra. Nunc
-        fringilla, nisi vitae fringilla placerat, enim justo semper erat,
-        mollis feugiat leo neque eu sem. Vestibulum orci urna, suscipit a,
-        accumsan nec, fringilla in, risus. Nullam ante. Nullam nec
-        eros. Nullam varius. Nulla facilisi. In auctor libero in
-        metus. Aliquam porttitor congue eros. Nulla facilisi. Mauris euismod
-        turpis ut felis. Ut nunc nisl, cursus quis, eleifend at, viverra
-        bibendum, lacus. Donec consequat lacus eu sapien. Fusce pulvinar
-        lectus quis nunc. In hac habitasse platea dictumst.</p>
-
-        <p>Aliquam molestie pulvinar ligula. Maecenas imperdiet, urna eget
-        ultrices adipiscing, nibh ante elementum neque, id molestie massa quam
-        ut nunc. Nullam porta. Phasellus a magna in sem volutpat
-        viverra. Quisque aliquet nunc ac turpis. Mauris dolor enim, viverra
-        rutrum, placerat et, laoreet et, justo. In id nulla. Donec
-        erat. Phasellus nec mi sed velit mollis cursus. Vestibulum
-        tincidunt. Praesent dui libero, facilisis eu, vulputate eget, aliquet
-        nec, ipsum. Pellentesque in nisl in mauris pretium euismod.</p>
-
-        </body> </html>
-
-        HTML;
-
-        // generate pdf with HTML
-        $pdf = $this->pdf->generate($gazette);
+        // generate pdf from HTML file
+        // $pdf = $this->chrome->generatePDF($gazette);
+        // $pdf = $this->browserless->pdfFromHtml($gazette);
+        $pdf = $this->browserless->pdfFromUrl($filename);
         print('@@@ generate pdf 6' . PHP_EOL);
+        // store in local storage
+        $file = './file.pdf';
+        file_put_contents($file, $pdf);
+
+        // remove local html file after 5 seconds
+        // sleep(5);
+        // unlink('./public/' . $filename);
         // store pdf in s3
-        $keys = $this->s3->put(['body' => $pdf, 'extension' => '.pdf']);
+        $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
+        // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
         print('@@@ generate pdf 7' . PHP_EOL);
         // store pdf in db
         $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
         print('@@@ generate pdf 8' . PHP_EOL);
+        if (!empty($data['pdf'])) $this->removeS3Object($data['pdf']);
         // update gazette with pdf
         $this->db->request([
             'query' => 'UPDATE gazette SET pdf = ? WHERE idgazette = ? LIMIT 1;',
@@ -2246,7 +2126,7 @@ trait Gazet
             'content' => [$idobject],
             'array' => true,
         ])[0];
-        return bin2hex($object[0]) . '.' . $object[1];
+        return empty($object) ? false : bin2hex($object[0]) . '.' . $object[1];
     }
 
     private function getSongData(int $idsong)
@@ -2596,6 +2476,7 @@ trait Gazet
             'query' => 'SELECT token FROM user_has_fcm_token WHERE iduser IN (' . $users . ') GROUP BY token;',
             'array' => true,
         ]);
+        if (empty($tokens)) return false;
         foreach ($tokens as &$token) $token = $token[0];
         return $tokens;
     }
@@ -2753,7 +2634,7 @@ trait Gazet
         $publications = $this->getAllFamilyPublications($idfamily);
 
         if (!empty($publications))
-            foreach ($publications as $publication) $this->removePublication($iduser, $idfamily, $publication);
+            foreach ($publications as $publication) $this->removePublication($idfamily, $publication);
 
         $this->db->request([
             'query' => 'DELETE FROM family WHERE idfamily = ? LIMIT 1;',
@@ -2866,7 +2747,7 @@ trait Gazet
     /**
      * Removes publication and all data linked to it.
      */
-    private function removePublication(int $iduser, int $idfamily, int $idpublication)
+    private function removePublication(int $idfamily, int $idpublication)
     {
         // get gazettes where publication is
         $gazettes = $this->getGazettesByPublication($idpublication);
@@ -2993,7 +2874,7 @@ trait Gazet
             'content' => [$iduser, $idfamily],
             'array' => true,
         ]);
-        foreach ($publications as $publication) $this->removePublication($iduser, $idfamily, $publication[0]);
+        foreach ($publications as $publication) $this->removePublication($idfamily, $publication[0]);
         return true;
     }
 
@@ -3207,7 +3088,9 @@ trait Gazet
 
     private function sendData(array $users, array $data = [])
     {
+        if (empty($users)) return;
         $tokens = $this->getUsersTokens($users);
+        if (empty($tokens)) return;
         $data['notification'] = false;
         $this->serv->task([
             'tokens' => $tokens,
@@ -3218,7 +3101,9 @@ trait Gazet
 
     private function sendNotification(array $users, string $title, string $message, array $data = [])
     {
+        if (empty($users)) return;
         $tokens = $this->getUsersTokens($users);
+        if (empty($tokens)) return;
         $data['notification'] = true;
         $this->serv->task([
             'tokens' => $tokens,
@@ -3845,6 +3730,7 @@ trait Gazet
                 $pub++;
             }
         }
+        unset($pub);
         // get total publications half pages count and publications likes
         $gazetteHalfpages = ($type - 2) * 2;
         $overflow = false;
@@ -3961,6 +3847,7 @@ trait Gazet
         }
 
         // generate pdf
+        // TODO: $this->serv->task() to avoid blocking
         $this->generatePdf($idgazette);
     }
 
@@ -4441,7 +4328,8 @@ trait Gazet
     private function userGetFile(int $iduser, int $idobject)
     {
         if (!$this->userCanReadObject($iduser, $idobject)) return false; // if file doesn't exist in s3
-        return ($this->s3->presignedUriGet($this->getS3ObjectKeyFromId($idobject)));
+        $key = $this->getS3ObjectKeyFromId($idobject);
+        return empty($key) ? false : $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($idobject));
     }
 
     /**
@@ -4756,7 +4644,7 @@ trait Gazet
     private function userRemovesPublication(int $iduser, int $idfamily, int $idpublication)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsPublicationsAuthor($iduser, $idpublication)) return false;
-        $this->removePublication($iduser, $idfamily, $idpublication);
+        $this->removePublication($idfamily, $idpublication);
         return true;
     }
 

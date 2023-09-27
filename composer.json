@@ -5,6 +5,6 @@
     },
     "require": {
         "firebase/php-jwt": "^6.3",
-        "dompdf/dompdf": "^2.0"
+        "chrome-php/chrome": "^1.9"
     }
 }

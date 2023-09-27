@@ -6,8 +6,16 @@ FROM phpswoole/swoole:php8.2
 # ENV MYSQL_ADDON_PASSWORD: "devonly"
 # ENV MYSQL_ADDON_DB: "db"
 # ENV ISLOCAL: TRUE
+
+# Copy Chromium binaries from the chromium image
+# COPY --from=chromium /usr/bin/chromium-browser /usr/bin/chromium-browser
+# COPY --from=chromium /usr/lib/chromium /usr/lib/chromium
+# Set environment variable CHROME_PATH
+# ENV CHROME_PATH=/usr/bin/chromium-browser
+RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/*
+RUN docker-php-ext-install mysqli &&\
+    docker-php-ext-install intl
 WORKDIR /var/www/
-RUN docker-php-ext-install mysqli
 # ADD https://docs.aws.amazon.com/aws-sdk-php/v3/download/aws.zip ./
 # RUN curl -sS https://getcomposer.org/installer | php \
 #     && mv composer.phar /usr/local/bin/composer \
@@ -15,9 +23,9 @@ RUN docker-php-ext-install mysqli
 # RUN composer -d ./ require aws/aws-sdk-php \
 #     && composer clear-cache
 
-RUN mkdir config &&\
-    mkdir app
-    # mkdir public
+# RUN mkdir config &&\
+#     mkdir app
+#     mkdir public
 # COPY /server ./
 # COPY /config/env.php ./config/
 # COPY /app ./app

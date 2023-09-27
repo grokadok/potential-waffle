@@ -22,10 +22,12 @@ services:
             - ./config:/var/www/config
             - ./app:/var/www/app
             - ./vendor/firebase/php-jwt/src:/var/www/app/jwt
-            # - ./public:/var/www/public
-            # - ./ressources/js:/var/www/public/assets/js
-            # - ./ressources/vendor:/var/www/public/assets/vendor
-            # - ./ressources/fonts:/var/www/public/assets/fonts
+            - ./public:/var/www/public
+            - ./ressources/css:/var/www/public/css
+            - ./ressources/fonts:/var/www/public/fonts
+            - ./ressources/img:/var/www/public/img
+            # - ./ressources/js:/var/www/public/js
+            # - ./ressources/vendor:/var/www/public/vendor
         ports:
             - 8080:8080
 
@@ -53,3 +55,10 @@ services:
             PMA_CONTROLPASS: "devonly"
             PMA_HOST: "mysql"
             UPLOAD_LIMIT: "512M"
+
+    browserless:
+        image: browserless/chrome:latest
+        container_name: browserless
+        restart: always
+        ports:
+            - 8083:3000

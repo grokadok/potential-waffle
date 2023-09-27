@@ -11,7 +11,9 @@ foreach ([
     __DIR__ . '/app/model/auth.php',
     __DIR__ . '/app/model/messaging.php',
     __DIR__ . '/app/model/s3.php',
-    __DIR__ . '/app/model/pdf.php',
+    __DIR__ . '/app/model/browserless.php',
+    // __DIR__ . '/app/model/dompdf.php',
+    // __DIR__ . '/app/model/chrome.php',
 ] as $value) require_once $value;
 if (getenv('ISLOCAL')) require_once __DIR__ . '/config/env.php';
 
@@ -22,7 +24,9 @@ use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
 use bopdev\DBRequest;
-use bopdev\PDF;
+// use bopdev\DomPDFWrapper;
+// use bopdev\Chrome;
+use bopdev\Browserless;
 use bopdev\Messaging;
 use bopdev\S3Client;
 use Throwable;
@@ -38,7 +42,9 @@ class FWServer
 
     public function __construct(
         private $db = new DBRequest(),
-        private $pdf = new PDF(),
+        // private $pdf = new PDF(),
+        // private $chrome = new Chrome(),
+        private $browserless = new Browserless(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
     ) {
@@ -258,18 +264,25 @@ class FWServer
             "ico" => "image/x-icon",
             "png" => "image/png",
             "gif" => "image/gif",
+            "html" => "text/html",
             "jpg" => "image/jpg",
             "jpeg" => "image/jpg",
             "mp4" => "video/mp4",
             "woff" => "font/woff",
             "woff2" => "font/woff2",
+            "ttf" => "font/ttf",
+            "svg" => "image/svg+xml",
+            "eot" => "application/vnd.ms-fontobject",
         ];
 
         if (isset($static[$type])) {
+            print("static file request: " . $file . PHP_EOL);
             if (file_exists($file)) {
+                print('file exists' . PHP_EOL);
                 $response->header("Content-Type", $static[$type]);
                 $response->sendfile($file);
             } else {
+                print('file does not exist' . PHP_EOL);
                 $response->status(404);
                 $response->end();
             }
