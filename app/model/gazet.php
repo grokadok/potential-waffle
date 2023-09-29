@@ -1094,10 +1094,10 @@ trait Gazet
             $formatter->setPattern('MMMM yyyy');
             $dateString = ucfirst($formatter->format(strtotime($data['print_date'])));
             for ($i = 0; $i < $pageCount - 1; $i++) {
-                $gazette .= $this->generatePage($pages[$i], $recipient, $dateString);
+                $gazette .= $this->generatePage($pages[$i] ?? [], $recipient, $dateString);
             }
 
-            foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient, $dateString);
+            // foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient, $dateString);
             print('@@@ generate pdf 5' . PHP_EOL);
 
             $gazette .= <<<HTML
