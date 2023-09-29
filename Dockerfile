@@ -1,4 +1,4 @@
-FROM phpswoole/swoole:php8.3
+FROM phpswoole/swoole:php8.1
 # FROM phpswoole/swoole:php8.1-alpine
 
 RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* &&\
