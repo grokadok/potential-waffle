@@ -1,13 +1,21 @@
 FROM phpswoole/swoole:php8.1-alpine
 WORKDIR /var/www
 
+# RUN apk add --no-cache icu-libs icu-dev \
+    # && docker-php-ext-install intl \
+    # && apk del icu-dev \
+    # && apk add --no-cache --virtual .locale-build-deps gettext \
+    # && cp /usr/bin/envsubst /usr/local/bin/envsubst \
+    # && apk del .locale-build-deps \
+    # && rm -rf /var/cache/apk/*
+
 RUN apk add --no-cache icu-libs icu-dev \
     && docker-php-ext-install intl \
     && apk del icu-dev \
-    && apk add --no-cache --virtual .locale-build-deps gettext \
-    && cp /usr/bin/envsubst /usr/local/bin/envsubst \
-    && apk del .locale-build-deps \
     && rm -rf /var/cache/apk/*
+# Set the intl extension configuration
+RUN echo "extension=intl.so" > /usr/local/etc/php/conf.d/intl.ini \
+    && echo "intl.default_locale = fr_FR.UTF-8" >> /usr/local/etc/php/conf.d/intl.ini
 
 # RUN apk add --no-cache icu-dev
 # RUN docker-php-ext-install intl
