@@ -513,7 +513,7 @@ trait Http
             if ($f === 994) {
                 $output = shell_exec('locale -a');
                 echo $output;
-                $formatter = new IntlDateFormatter('fr_FR.UTF-8', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+                $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
                 $formatter->setPattern('d MMMM');
                 $dateString = strtoupper($formatter->format(strtotime('2021-01-06')));
                 print('### Date string: ' . $dateString . PHP_EOL);
