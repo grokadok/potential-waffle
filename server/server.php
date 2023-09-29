@@ -24,8 +24,6 @@ use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
 use bopdev\DBRequest;
-// use bopdev\DomPDFWrapper;
-// use bopdev\Chrome;
 use bopdev\Browserless;
 use bopdev\Messaging;
 use bopdev\S3Client;
@@ -42,8 +40,6 @@ class FWServer
 
     public function __construct(
         private $db = new DBRequest(),
-        // private $pdf = new PDF(),
-        // private $chrome = new Chrome(),
         private $browserless = new Browserless(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
@@ -276,13 +272,10 @@ class FWServer
         ];
 
         if (isset($static[$type])) {
-            // print("static file request: " . $file . PHP_EOL);
             if (file_exists($file)) {
-                // print('file exists' . PHP_EOL);
                 $response->header("Content-Type", $static[$type]);
                 $response->sendfile($file);
             } else {
-                // print('file does not exist' . PHP_EOL);
                 $response->status(404);
                 $response->end();
             }
@@ -301,11 +294,12 @@ class FWServer
                 $response->header("Content-Type", $res["type"] ?? "");
                 $response->end(json_encode($res["content"]) ?? "");
                 // $response->end(json_encode($res["content"], JSON_NUMERIC_CHECK) ?? "");
-            } elseif ($request_uri === "/" || $request_uri === "/index.php") {
-                $theme = "light";
-                $session = "";
-                // require __DIR__ . "/public/index.php";
             }
+            // elseif ($request_uri === "/" || $request_uri === "/index.php") {
+            //     $theme = "light";
+            //     $session = "";
+            //     // require __DIR__ . "/public/index.php";
+            // }
         }
     }
     public function onStart($serv)
@@ -316,12 +310,6 @@ class FWServer
         echo "master_pid: {$serv->master_pid}" . PHP_EOL;
         echo "manager_pid: {$serv->manager_pid}" . PHP_EOL;
         echo "########" . PHP_EOL . PHP_EOL;
-
-        if (extension_loaded('intl')) {
-            echo '### intl extension is enabled';
-        } else {
-            echo '### intl extension is not enabled';
-        }
 
         // DB query BENCHMARK
         // $this->dbQueryBenchmark(10000);
