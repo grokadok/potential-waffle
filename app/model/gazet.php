@@ -1123,9 +1123,8 @@ trait Gazet
             $file = './file.pdf';
             file_put_contents($file, $pdf);
 
-            // remove local html file after 5 seconds
-            // sleep(5);
-            // unlink('./public/' . $filename);
+            // remove local html file
+            unlink('./public/' . $filename);
             // store pdf in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
             // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
