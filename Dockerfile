@@ -1,4 +1,4 @@
-FROM phpswoole/swoole:php8.1-alpine
+FROM phpswoole/swoole:php8.3-alpine
 WORKDIR /var/www
 
 RUN apk add --no-cache icu-libs icu-dev \
