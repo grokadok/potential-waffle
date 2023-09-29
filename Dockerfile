@@ -1,11 +1,11 @@
 FROM phpswoole/swoole:php8.1-alpine
 WORKDIR /var/www
-RUN docker-php-ext-install mysqli &&\
-    docker-php-ext-install intl &&\
-    mkdir app &&\
-    mkdir app/model &&\
-    mkdir app/jwt &&\
-    mkdir public
+RUN docker-php-ext-install mysqli
+RUN docker-php-ext-install intl
+RUN mkdir app
+RUN mkdir app/model
+RUN mkdir app/jwt
+RUN mkdir public
 COPY /server ./
 COPY /public ./public
 COPY /app/model ./app/model

@@ -12,8 +12,8 @@ FROM phpswoole/swoole:php8.2
 # COPY --from=chromium /usr/lib/chromium /usr/lib/chromium
 # Set environment variable CHROME_PATH
 # ENV CHROME_PATH=/usr/bin/chromium-browser
-RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* &&\
-    docker-php-ext-install mysqli &&\
+RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/*
+RUN docker-php-ext-install mysqli &&\
     docker-php-ext-install intl
 WORKDIR /var/www/
 # ADD https://docs.aws.amazon.com/aws-sdk-php/v3/download/aws.zip ./
