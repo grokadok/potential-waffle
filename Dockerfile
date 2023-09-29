@@ -1,9 +1,9 @@
-FROM phpswoole/swoole:php8.1
-# FROM phpswoole/swoole:php8.1-alpine
+# FROM phpswoole/swoole:php8.1
+FROM phpswoole/swoole:php8.1-alpine
 
-RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* &&\
-    docker-php-ext-install mysqli &&\
-    docker-php-ext-install intl
+# RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* &&\
+#     docker-php-ext-install mysqli &&\
+#     docker-php-ext-install intl
 
 WORKDIR /var/www
 
@@ -27,9 +27,17 @@ WORKDIR /var/www
 # RUN echo "extension=intl.so" > /usr/local/etc/php/conf.d/intl.ini \
 #     && echo "intl.default_locale = fr_FR.UTF-8" >> /usr/local/etc/php/conf.d/intl.ini
 
-# RUN apk add --no-cache icu-dev
-# RUN docker-php-ext-install intl
-# RUN docker-php-ext-install mysqli
+RUN apk add --no-cache \
+    $MUSL_LOCALE_DEPS \
+    && wget https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
+    && unzip musl-locales-master.zip \
+    && cd musl-locales-master \
+    && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
+    && cd .. && rm -r musl-locales-master
+
+RUN apk add --no-cache icu-dev
+RUN docker-php-ext-install intl
+RUN docker-php-ext-install mysqli
 RUN mkdir app
 RUN mkdir app/model
 RUN mkdir app/jwt
@@ -42,7 +50,8 @@ COPY /ressources/css/style.css ./public/css/style.css
 COPY /ressources/fonts ./public/fonts
 COPY /ressources/img ./public/img
 ENV COMPOSER_ALLOW_SUPERUSER=1
-RUN composer -d ./ install \
+RUN composer update \
+    && composer -d ./ install \
     && composer clear-cache
 ENV COMPOSER_ALLOW_SUPERUSER=0
 
