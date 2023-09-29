@@ -24,6 +24,7 @@ COPY /ressources/css/style.css ./public/css/style.css
 COPY /ressources/fonts ./public/fonts
 COPY /ressources/img ./public/img
 ENV COMPOSER_ALLOW_SUPERUSER=1
+RUN composer self-update --2
 RUN composer -d ./ install \
     && composer clear-cache
 ENV COMPOSER_ALLOW_SUPERUSER=0
