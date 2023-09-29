@@ -1,9 +1,17 @@
 FROM phpswoole/swoole:php8.1-alpine
 WORKDIR /var/www
-# RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/*
-RUN apk add --no-cache icu-dev
+
+RUN apk add --no-cache icu-libs icu-dev \
+    && docker-php-ext-install intl \
+    && apk del icu-dev \
+    && apk add --no-cache --virtual .locale-build-deps gettext \
+    && cp /usr/bin/envsubst /usr/local/bin/envsubst \
+    && apk del .locale-build-deps \
+    && rm -rf /var/cache/apk/*
+
+# RUN apk add --no-cache icu-dev
+# RUN docker-php-ext-install intl
 RUN docker-php-ext-install mysqli
-RUN docker-php-ext-install intl
 RUN mkdir app
 RUN mkdir app/model
 RUN mkdir app/jwt

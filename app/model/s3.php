@@ -238,7 +238,7 @@ class S3Client
             ]);
             $request = $this->client->createPresignedRequest($cmd, $expiration);
             $uri = $request->getUri();
-            print('### presignedUriGet: ' . $uri . PHP_EOL);
+            // print('### presignedUriGet: ' . $uri . PHP_EOL);
             return (string)$uri;
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
@@ -259,7 +259,7 @@ class S3Client
             ]);
             $request = $this->client->createPresignedRequest($cmd, $options['expiration'] ?? '+5 minutes')->withMethod('PUT');
             $uri = $request->getUri();
-            print('### presignedUriPut: ' . $uri . PHP_EOL);
+            // print('### presignedUriPut: ' . $uri . PHP_EOL);
             return ['bucket' => $options['bucket'] ?? $this->bucket, 'key' => $key, 'uri' => $uri];
         } catch (S3Exception $e) {
             print($e->getMessage() . PHP_EOL);
