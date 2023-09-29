@@ -912,126 +912,129 @@ trait Gazet
         <div class="page">
             <div class="content">
         HTML;
-        foreach ($parameters as $place) {
-            // get content (publication,game,song...)
-            if ($place['idpublication'] !== null) {
-                // get publication data
-                $publication = $this->getPublicationData($place['idpublication']);
-                print('@@@ generate page publication start' . PHP_EOL);
-                var_dump($publication);
-                print('@@@ generate page publication end' . PHP_EOL);
+        if (!empty($parameters)) {
+            foreach ($parameters as $place) {
+                // get content (publication,game,song...)
+                if ($place['idpublication'] !== null) {
+                    // get publication data
+                    $publication = $this->getPublicationData($place['idpublication']);
+                    print('@@@ generate page publication start' . PHP_EOL);
+                    var_dump($publication);
+                    print('@@@ generate page publication end' . PHP_EOL);
 
-                // parse publication date
-                $date = new DateTime($publication['created']);
-                $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
-                $dateString = $formatter->format($date);
-                // get author data
-                $author = $this->getUserData($publication['author']);
-                $avatar = $author['avatar'] !== null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($author['avatar'])) : 'img/user-solid.svg';
-                // parse text
-                $text = str_replace("\n", '<br>', $publication['text']);
+                    // parse publication date
+                    $date = new DateTime($publication['created']);
+                    $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+                    $dateString = $formatter->format($date);
+                    // get author data
+                    $author = $this->getUserData($publication['author']);
+                    $avatar = $author['avatar'] !== null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($author['avatar'])) : 'img/user-solid.svg';
+                    // parse text
+                    $text = str_replace("\n", '<br>', $publication['text']);
 
-                // parse publication layout
-                // full / half page
-                $size = $publication['layout']['identifier'][0] === 'f' ? 'full' : 'half';
-                // publication type
-                switch ($publication['layout']['identifier'][1]) {
-                    case 'j':
-                        // if journal
-                        $type = 'notebook';
-                        $picture = '';
-                        if (!empty($publication['images'])) {
-                            $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['idobject']));
-                            $picture = <<<HTML
-                            <div class="pic__frame">
-                                <div class="pic__pic">
+                    // parse publication layout
+                    // full / half page
+                    $size = $publication['layout']['identifier'][0] === 'f' ? 'full' : 'half';
+                    // publication type
+                    switch ($publication['layout']['identifier'][1]) {
+                        case 'j':
+                            // if journal
+                            $type = 'notebook';
+                            $picture = '';
+                            if (!empty($publication['images'])) {
+                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['idobject']));
+                                $picture = <<<HTML
+                                <div class="pic__frame">
+                                    <div class="pic__pic">
+                                        <img
+                                            src="$url"
+                                            height="470"
+                                            width="470"
+                                            alt="photo"
+                                        />
+                                    </div>
                                     <img
-                                        src="$url"
-                                        height="470"
-                                        width="470"
-                                        alt="photo"
+                                        width="630"
+                                        height="650"
+                                        src="img/picture-frame.svg"
+                                        alt="cadre de la photo"
                                     />
                                 </div>
-                                <img
-                                    width="630"
-                                    height="650"
-                                    src="img/picture-frame.svg"
-                                    alt="cadre de la photo"
-                                />
-                            </div>
-                            HTML;
-                        }
-                        // replace \n by <br>
-                        $page .= <<<HTML
-                        <div class="$type $size">
-                            <div class="container">
-                                <div class="text">
-                                    <span>Le $dateString</span>
-                                    $text
-                                </div>
-                            </div>
-                            $picture
-                        </div>
-                        HTML;
-                        break;
-                    case 'p':
-                        // if publication
-                        $type = 'publication';
-                        $orientation = $publication['layout']['orientation'] === 1 ? 'landscape' : 'portrait';
-                        $pictureCount = $publication['layout']['identifier'][3];
-                        $pictureLayout = $pictureCount > 1 ? '_' . $pictureCount . $publication['layout']['identifier'][4] : '';
-                        // pictures
-                        $pictures = '';
-                        foreach ($publication['images'] as $image) {
-                            $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['idobject']));
-                            $pictures .= <<<HTML
-                            <div>
-                                <img src="$url" alt="">
-                            </div>
-                            HTML;
-                        }
-
-                        $page .= <<<HTML
-                        <div class="$type $size $orientation">
-                            <div class="pics $pictureLayout">
-                                $pictures
-                            </div>
-                            <div class="desc">
-                                <div class="author">
-                                    <div class="avatar">
-                                        <img src="$avatar" alt="" />
-                                    </div>
-                                    <div class="fullname-date">
-                                        <div>
-                                            <span class="firstname">{$author['first_name']}</span>
-                                            <span class="lastname">{$author['last_name']}</span>
-                                        </div>
-                                        <div>$dateString</div>
-                                    </div>
-                                </div>
-                                <div class="content">
-                                    <h1 class="title">{$publication['title']}</h1>
-                                    <span class="text">
+                                HTML;
+                            }
+                            // replace \n by <br>
+                            $page .= <<<HTML
+                            <div class="$type $size">
+                                <div class="container">
+                                    <div class="text">
+                                        <span>Le $dateString</span>
                                         $text
-                                    </span>
-                                    <!-- <hr class="separator" />
-                                    <div class="comment">
-                                        <span class="comment-author">Amélie :</span>
-                                        <span class="comment-text"
-                                            >Quaerat dolor magnam quiquia labore.</span
-                                        >
-                                    </div> -->
+                                    </div>
+                                </div>
+                                $picture
+                            </div>
+                            HTML;
+                            break;
+                        case 'p':
+                            // if publication
+                            $type = 'publication';
+                            $orientation = $publication['layout']['orientation'] === 1 ? 'landscape' : 'portrait';
+                            $nameNewLine = $orientation === 'portrait' ? '<br>' : '';
+                            $pictureLayout = '_' . $publication['layout']['identifier'][3] . $publication['layout']['identifier'][4];
+                            // pictures
+                            $pictures = '';
+                            foreach ($publication['images'] as $image) {
+                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['idobject']));
+                                $pictures .= <<<HTML
+                                <div>
+                                    <img src="$url" alt="">
+                                </div>
+                                HTML;
+                            }
+
+                            $page .= <<<HTML
+                            <div class="$type $size $orientation">
+                                <div class="pics $pictureLayout">
+                                    $pictures
+                                </div>
+                                <div class="desc">
+                                    <div class="author">
+                                        <div class="avatar">
+                                            <img src="$avatar" alt="" />
+                                        </div>
+                                        <div class="fullname-date">
+                                            <div>
+                                                <span class="firstname">{$author['first_name']}</span>
+                                                $nameNewLine
+                                                <span class="lastname">{$author['last_name']}</span>
+                                            </div>
+                                            <div>$dateString</div>
+                                        </div>
+                                    </div>
+                                    <div class="content">
+                                        <h1 class="title">{$publication['title']}</h1>
+                                        <span class="text">
+                                            $text
+                                        </span>
+                                        <!-- <hr class="separator" />
+                                        <div class="comment">
+                                            <span class="comment-author">Amélie :</span>
+                                            <span class="comment-text"
+                                                >Quaerat dolor magnam quiquia labore.</span
+                                            >
+                                        </div> -->
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        HTML;
-                        break;
+                            HTML;
+                            break;
+                    }
+                } else if ($place['idgame'] !== null) {
+                    // get game data
+                    // game is an image, get it
+                } else if ($place['idsong'] !== null) {
+                    // get song data
                 }
-            } else if ($place['idgame'] !== null) {
-                // get game data
-                // game is an image, get it
-            } else if ($place['idsong'] !== null) {
-                // get song data
             }
         }
         $page .= <<<HTML
@@ -1083,12 +1086,17 @@ trait Gazet
             $gazette .= $cover;
 
             // get all gazette pages
+            $pageCount = $this->getGazetteTypeData($data['type']);
             $pages = $this->getGazettePages($idgazette);
             print('@@@ generate pdf 4' . PHP_EOL);
             // for each gazette page
             $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
             $formatter->setPattern('MMMM yyyy');
             $dateString = ucfirst($formatter->format(strtotime($data['print_date'])));
+            for ($i = 0; $i < $pageCount - 1; $i++) {
+                $gazette .= $this->generatePage($pages[$i], $recipient, $dateString);
+            }
+
             foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient, $dateString);
             print('@@@ generate pdf 5' . PHP_EOL);
 

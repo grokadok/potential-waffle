@@ -110,7 +110,7 @@ footer {
             object-fit: cover;
         }
     }
-    &:not(._l1, ._p1) > :first-child {
+    &:not(._1a) > :first-child {
         grid-area: a;
     }
     & > :nth-child(2) {
@@ -451,10 +451,11 @@ footer {
 
 .address {
     position: absolute;
+    top: -1px;
+    right: 140px;
+    box-sizing: border-box;
     height: 335px;
     width: 1000px;
-    box-sizing: border-box;
-    right: 140px;
     display: flex;
     justify-content: flex-start;
     align-items: center;
