@@ -25,7 +25,7 @@ FROM phpswoole/swoole:php8.2-alpine
 #     musl-locales \
 #     musl-locales-lang
 
-RUN apk update && apk add --no-cache libintl icu icu-dev musl-locales musl-locales-lang
+RUN apk update && apk add --no-cache libintl icu icu-dev icu-data-full musl-locales musl-locales-lang
 
 # RUN apk add --no-cache icu-dev
 # RUN docker-php-ext-configure intl
