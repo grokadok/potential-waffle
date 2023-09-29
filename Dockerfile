@@ -10,9 +10,12 @@ WORKDIR /var/www
     # && rm -rf /var/cache/apk/*
 
 RUN apk add --no-cache icu-libs icu-dev \
-    && apk add --no-cache locales \
+    && apk add --no-cache --virtual .locale-build-deps wget \
+    && wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub \
+    && wget -q https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.34-r0/glibc-2.34-r0.apk \
+    && apk add glibc-2.34-r0.apk \
     && docker-php-ext-install intl \
-    && apk del icu-dev \
+    && apk del icu-dev .locale-build-deps \
     && rm -rf /var/cache/apk/*
 # Set the intl extension configuration
 RUN echo "extension=intl.so" > /usr/local/etc/php/conf.d/intl.ini \
