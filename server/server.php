@@ -317,6 +317,12 @@ class FWServer
         echo "manager_pid: {$serv->manager_pid}" . PHP_EOL;
         echo "########" . PHP_EOL . PHP_EOL;
 
+        if (extension_loaded('intl')) {
+            echo '### intl extension is enabled';
+        } else {
+            echo '### intl extension is not enabled';
+        }
+
         // DB query BENCHMARK
         // $this->dbQueryBenchmark(10000);
 

@@ -59,6 +59,9 @@ body {
                 gap: 36px;
                 & > div {
                     flex: 1;
+                    &.half {
+                        max-height: 1551px;
+                    }
                 }
             }
         }
@@ -84,7 +87,7 @@ footer {
 /* Publication specific */
 
 .publication {
-    max-height: 1551px;
+    /* max-height: 1551px; */
     display: flex;
     & span {
         line-height: 56px;
@@ -96,7 +99,18 @@ footer {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr;
     gap: 20px;
-    & > :first-child {
+    & > div {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+        & > img {
+            min-width: 100%;
+            min-height: 100%;
+            object-fit: cover;
+        }
+    }
+    &:not(._l1, ._p1) > :first-child {
         grid-area: a;
     }
     & > :nth-child(2) {
@@ -129,11 +143,19 @@ footer {
         & .avatar {
             height: 295px;
             width: 295px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
             background-color: #7582af;
-            background-size: cover;
-            background-image: url(../img/profile-pic-01.png);
+            /* background-size: cover; */
             -webkit-mask-image: url(../img/profile-mask.svg);
             mask-image: url(../img/profile-mask.svg);
+            & img {
+                min-width: 100%;
+                min-height: 100%;
+                object-fit: cover;
+            }
         }
         & .fullname-date {
             height: 295px;
@@ -142,7 +164,6 @@ footer {
             & .firstname {
                 font-weight: 700;
             }
-
             & .lastname {
                 text-transform: uppercase;
             }
@@ -169,34 +190,34 @@ footer {
     & .pics {
         height: 1064px;
         /* Layouts */
-        &.l-2a {
+        &._2a {
             grid-template-columns: 1fr 1fr;
             grid-template-areas: "a b";
         }
-        &.l-2b,
-        &.l-2c,
-        &.l-3a,
-        &.l-3b,
-        &.l-3c {
+        &._2b,
+        &._2c,
+        &._3a,
+        &._3b,
+        &._3c {
             grid-template-columns: 1fr 1fr 1fr;
         }
-        &.l-2b {
+        &._2b {
             grid-template-areas: "a a b";
         }
-        &.l-2c {
+        &._2c {
             grid-template-areas: "a b b";
         }
-        &.l-3a {
+        &._3a {
             grid-template-areas: "a b c";
         }
-        &.l-3b,
-        &.l-3c {
+        &._3b,
+        &._3c {
             grid-template-rows: 1fr 1fr;
         }
-        &.l-3b {
+        &._3b {
             grid-template-areas: "a a b" "a a c";
         }
-        &.l-3c {
+        &._3c {
             grid-template-areas: "a c c" "b c c";
         }
         /* End layouts */
@@ -220,29 +241,29 @@ footer {
     & .pics {
         width: 1219px;
         /* Layouts */
-        &.p-2a {
+        &._2a {
             grid-template-columns: 1fr 1fr;
             grid-template-areas: "a b";
         }
-        &.p-2b {
+        &._2b {
             grid-template-rows: 1fr 1fr;
             grid-template-areas: "a" "b";
         }
-        &.p-3a {
+        &._3a {
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
             grid-template-areas: "a a" "b c";
         }
-        &.p-3b {
+        &._3b {
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr 1fr;
             grid-template-areas: "a a" "a a" "b c";
         }
-        &.p-3c {
+        &._3c {
             grid-template-rows: 1fr 1fr 1fr;
             grid-template-areas: "a" "b" "c";
         }
-        &.p-3d {
+        &._3d {
             grid-template-columns: 1fr 1fr 1fr;
             grid-template-areas: "a b c";
         }
@@ -261,6 +282,13 @@ footer {
 
 .notebook {
     position: relative;
+    background-size: contain;
+    &.full {
+        background-image: url(../img/fp-notebook.png);
+    }
+    &.half {
+        background-image: url(../img/hp-notebook.png);
+    }
 }
 
 .song {
@@ -326,6 +354,7 @@ footer {
 /* pub notebook */
 
 .notebook .margin {
+    display: none;
     height: calc(100% - 100px);
     width: 4px;
     background-color: #ffabab;
@@ -334,6 +363,7 @@ footer {
 }
 
 .notebook .line {
+    display: none;
     position: absolute;
     height: 4px;
     width: 100%;
@@ -354,6 +384,11 @@ footer {
     padding-top: 134px;
     font-size: 46px;
     line-height: 118px;
+    & > span {
+        display: block;
+        width: 100%;
+        text-align: end;
+    }
 }
 
 .notebook .pic {
@@ -379,8 +414,8 @@ footer {
 /* Cover elements */
 
 .date-url {
-    height: 400px;
-    /* padding-top: 218px; */
+    /* height: 400px; */
+    padding-bottom: 40px;
     display: flex;
     flex-direction: column;
 }
@@ -391,7 +426,7 @@ footer {
     align-items: center;
     justify-content: center;
     width: 509px;
-    height: 230px;
+    height: 240px;
     background-color: var(--secondary-color);
     color: white;
     font-weight: 700;
@@ -408,10 +443,11 @@ footer {
 
 .date-url__url {
     width: 509px;
-    padding-top: 10px;
+    padding: 10px 0px;
     color: var(--secondary-color);
     font-size: 48px;
     font-weight: bold;
+    font-style: italic;
 }
 .pic-ambient-text {
     position: absolute;
@@ -425,15 +461,17 @@ footer {
     justify-content: center;
     align-items: center;
     overflow: hidden;
+    border-radius: 50px 50px 0px 0px;
     & img {
         min-width: 100%;
         min-height: 100%;
+        object-fit: cover;
     }
 }
 
 .address {
     position: absolute;
-    height: 340px;
+    height: 335px;
     width: 1000px;
     box-sizing: border-box;
     right: 140px;
@@ -443,7 +481,7 @@ footer {
     background-color: #fff;
     padding-left: 57px;
     padding-right: 57px;
-    padding-bottom: 41px;
+    padding-bottom: 30px;
     font-size: 50px;
 }
 
@@ -511,6 +549,7 @@ footer {
     & img {
         min-width: 100%;
         min-height: 100%;
+        object-fit: cover;
     }
 }
 

@@ -4,6 +4,7 @@ namespace bopdev;
 
 use DateTime;
 use Throwable;
+use IntlDateFormatter;
 
 trait Gazet
 {
@@ -727,7 +728,9 @@ trait Gazet
         // date
         // $date = new DateTime($data['print_date']);
         // $date->setLocale('fr_FR');
-        $date = date('j F', strtotime($data['print_date']));
+        $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+        $formatter->setPattern('d MMMM');
+        $dateString = strtoupper($formatter->format(strtotime($data['print_date'])));
         $year = substr($data['print_date'], 0, 4);
         // day-month = first day of print date + 1 month
         // year = if month = 12, year + 1, else year
@@ -740,7 +743,8 @@ trait Gazet
         $address = implode('<br>', $address);
 
         // get cover img
-        $coverImg = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($data['cover_picture']));
+        $coverImg = !empty($data['cover_picture']) ?
+            $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($data['cover_picture'])) : '';
 
         // get bottom page writers
         $writers = $this->getCoverWriters($data['idgazette']);
@@ -752,7 +756,7 @@ trait Gazet
             foreach ($writers as $writer) {
                 if ($i < 4) {
                     // get user data
-                    $user = $this->getUserData($writers[$i]);
+                    $user = $this->getUserData($writer);
                     $avatar = $user['avatar'] != null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($user['avatar'])) : 'img/user-solid.svg';
                     $coverWriters .= <<<HTML
                         <div class="people">
@@ -780,7 +784,7 @@ trait Gazet
                         />
                         <div class="date-url">
                             <div class="date-url__date">
-                                <div class="date-url__day-month">$date</div>
+                                <div class="date-url__day-month">$dateString</div>
                                 <div class="date-url__year">$year</div>
                             </div>
                             <div class="date-url__url">www.la-gazet.com</div>
@@ -792,11 +796,6 @@ trait Gazet
                         </div> -->
                         <div class="address">
                             $address
-                            <!-- MME ASTRID GUTH<br />
-                            8 RUE DU CASTOR<br />
-                            RESIDENCE LES CASTORS BLANCS<br />
-                            BP24367<br />
-                            67100 HEIDWILLER<br /> -->
                         </div>
                         <div class="pic-main">
                             <img src="$coverImg" alt="" />
@@ -810,34 +809,6 @@ trait Gazet
                     </div>
                     <div class="bottom">
                         $coverWriters
-                        <!-- <div class="people">
-                            <div class="people__pic-container">
-                                <div class="people__pic"></div>
-                            </div>
-                            <div class="people__firstname">Jean</div>
-                            <div class="people__lastname">Guth</div>
-                        </div>
-                        <div class="people">
-                            <div class="people__pic-container">
-                                <div class="people__pic"></div>
-                            </div>
-                            <div class="people__firstname">Amelie</div>
-                            <div class="people__lastname">Niffer</div>
-                        </div>
-                        <div class="people">
-                            <div class="people__pic-container">
-                                <div class="people__pic"></div>
-                            </div>
-                            <div class="people__firstname">Christian</div>
-                            <div class="people__lastname">Monroe</div>
-                        </div>
-                        <div class="people">
-                            <div class="people__pic-container">
-                                <div class="people__pic"></div>
-                            </div>
-                            <div class="people__firstname">Marie-Elisabeth</div>
-                            <div class="people__lastname">Muckensturm</div>
-                        </div> -->
                     </div>
                 </div>
             </div>
@@ -935,7 +906,7 @@ trait Gazet
         return $page;
     }
 
-    private function generatePage(array $parameters)
+    private function generatePage(array $parameters, array $recipient)
     {
         $page = <<<HTML
         <div class="page">
@@ -946,6 +917,156 @@ trait Gazet
             if ($place['idpublication'] !== null) {
                 // get publication data
                 $publication = $this->getPublicationData($place['idpublication']);
+                print('@@@ generate page publication start' . PHP_EOL);
+                var_dump($publication);
+                print('@@@ generate page publication end' . PHP_EOL);
+
+                // parse publication date
+                $date = new DateTime($publication['created']);
+                $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+                $dateString = $formatter->format($date);
+                // get author data
+                $author = $this->getUserData($publication['author']);
+                $avatar = $author['avatar'] !== null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($author['avatar'])) : 'img/user-solid.svg';
+                // parse text
+                $text = str_replace("\n", '<br>', $publication['text']);
+
+                // parse publication layout
+                // full / half page
+                $size = $publication['layout']['identifier'][0] === 'f' ? 'full' : 'half';
+                // publication type
+                switch ($publication['layout']['identifier'][1]) {
+                    case 'j':
+                        // if journal
+                        $type = 'notebook';
+                        $picture = '';
+                        if (!empty($publication['images'])) {
+                            $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['idobject']));
+                            $picture = <<<HTML
+                            <div class="pic__frame">
+                                <div class="pic__pic">
+                                    <img
+                                        src="$url"
+                                        height="470"
+                                        width="470"
+                                        alt="photo"
+                                    />
+                                </div>
+                                <img
+                                    width="630"
+                                    height="650"
+                                    src="img/picture-frame.svg"
+                                    alt="cadre de la photo"
+                                />
+                            </div>
+                            HTML;
+                        }
+                        // replace \n by <br>
+                        $page .= <<<HTML
+                        <div class="$type $size">
+                            <div class="container">
+                                <div class="text">
+                                    <span>Le $dateString</span>
+                                    $text
+                                </div>
+                            </div>
+                            $picture
+                        </div>
+                        HTML;
+                        break;
+                    case 'p':
+                        // if publication
+                        $type = 'publication';
+                        $orientation = $publication['layout']['orientation'] === 1 ? 'landscape' : 'portrait';
+                        $pictureCount = $publication['layout']['identifier'][2];
+                        $pictureLayout = $pictureCount > 1 ? '_' . $pictureCount . $publication['layout']['identifier'][3] : '';
+                        // pictures
+                        $pictures = '';
+                        foreach ($publication['images'] as $image) {
+                            $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['idobject']));
+                            $pictures .= <<<HTML
+                            <div>
+                                <img src="$url" alt="">
+                            </div>
+                            HTML;
+                        }
+
+                        $page .= <<<HTML
+                        <div class="$type $size $orientation">
+                            <div class="pics $pictureLayout">
+                                $pictures
+                            </div>
+                            <div class="desc">
+                                <div class="author">
+                                    <div class="avatar">
+                                        <img src="$avatar" alt="" />
+                                    </div>
+                                    <div class="fullname-date">
+                                        <div>
+                                            <span class="firstname">{$author['first_name']}</span>
+                                            <span class="lastname">{$author['last_name']}</span>
+                                        </div>
+                                        <div>$dateString</div>
+                                    </div>
+                                </div>
+                                <div class="content">
+                                    <h1 class="title">{$publication['title']}</h1>
+                                    <span class="text">
+                                        $text
+                                    </span>
+                                    <hr class="separator" />
+                                    <div class="comment">
+                                        <span class="comment-author">Amélie :</span>
+                                        <span class="comment-text"
+                                            >Quaerat dolor magnam quiquia labore.</span
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        HTML;
+                        break;
+                }
+
+                // $page .= <<<HTML
+                // <div class="$type $size $orientation">
+                //     <div class="pics l-3a">
+                //         <div></div>
+                //         <div></div>
+                //         <div></div>
+                //     </div>
+                //     <div class="desc">
+                //         <div class="author">
+                //             <div class="avatar">
+                //                     <img src="$avatar" alt="" />
+                //             </div>
+                //             <div class="fullname-date">
+                //                 <div>
+                //                     <span class="firstname">{$author['first_name']}</span>
+                //                     <span class="lastname">{$author['last_name']}</span>
+                //                 </div>
+                //                 <div>$dateString</div>
+                //             </div>
+                //         </div>
+                //         <div class="content">
+                //             <h1 class="title">Titre : Lorem Ipsum</h1>
+                //             <span class="text">
+                //                 Lorem ipsum dolor sit amet consectetur
+                //                 adipisicing elit. Aliquam, animi molestias
+                //                 repudiandae laboriosam vel porro aliquid minima
+                //                 qui, facere voluptate.
+                //             </span>
+                //             <hr class="separator" />
+                //             <div class="comment">
+                //                 <span class="comment-author">Amélie :</span>
+                //                 <span class="comment-text"
+                //                     >Quaerat dolor magnam quiquia labore.</span
+                //                 >
+                //             </div>
+                //         </div>
+                //     </div>
+                // </div>
+                // HTML;
             } else if ($place['idgame'] !== null) {
                 // get game data
                 // game is an image, get it
@@ -958,10 +1079,10 @@ trait Gazet
             <footer>
                 <img
                     height="110"
-                    src="__DIR__/logo.svg"
+                    src="img/logo.svg"
                     alt="logo de l\'application"
                 />
-                <span>Pour Astrid - Décembre 2022</span>
+                <span>Pour {$recipient['display_name']} - Décembre 2022</span>
             </footer>
         </div>
         HTML;
@@ -1005,7 +1126,7 @@ trait Gazet
             $pages = $this->getGazettePages($idgazette);
             print('@@@ generate pdf 4' . PHP_EOL);
             // for each gazette page
-            foreach ($pages as $page) $gazette .= $this->generateSinglePage($page);
+            foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient);
             print('@@@ generate pdf 5' . PHP_EOL);
 
             $gazette .= <<<HTML
@@ -1033,7 +1154,7 @@ trait Gazet
 
             // remove local html file after 5 seconds
             // sleep(5);
-            unlink('./public/' . $filename);
+            // unlink('./public/' . $filename);
             // store pdf in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
             // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
