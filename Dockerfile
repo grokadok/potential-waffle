@@ -15,9 +15,9 @@ RUN apk add --no-cache \
       && cd musl-locales-master \
       && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
       && cd .. && rm -r musl-locales-master
-      
-RUN apk add --no-cache icu-data
+
 RUN apk add --no-cache icu-dev
+RUN docker-php-ext-configure intl
 RUN docker-php-ext-install intl
 RUN docker-php-ext-install mysqli
 
