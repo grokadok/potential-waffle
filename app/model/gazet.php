@@ -1093,7 +1093,7 @@ trait Gazet
             $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
             $formatter->setPattern('MMMM yyyy');
             $dateString = ucfirst($formatter->format(strtotime($data['print_date'])));
-            for ($i = 0; $i < $pageCount - 1; $i++) {
+            for ($i = 1; $i < $pageCount - 1; $i++) {
                 $gazette .= $this->generatePage($pages[$i] ?? [], $recipient, $dateString);
             }
 
