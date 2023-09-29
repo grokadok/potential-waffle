@@ -1,5 +1,6 @@
 FROM phpswoole/swoole:php8.1-alpine
 WORKDIR /var/www
+RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/*
 RUN docker-php-ext-install mysqli
 RUN docker-php-ext-install intl
 RUN mkdir app
