@@ -10,6 +10,7 @@ WORKDIR /var/www
     # && rm -rf /var/cache/apk/*
 
 RUN apk add --no-cache icu-libs icu-dev \
+    && apk add --no-cache locales \
     && docker-php-ext-install intl \
     && apk del icu-dev \
     && rm -rf /var/cache/apk/*
