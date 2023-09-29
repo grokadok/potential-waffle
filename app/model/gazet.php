@@ -1128,6 +1128,7 @@ trait Gazet
             // store pdf in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
             // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
+            unset($pdf);
             print('@@@ generate pdf 7' . PHP_EOL);
             // store pdf in db
             $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);

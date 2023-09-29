@@ -2,7 +2,8 @@ FROM phpswoole/swoole:php8.2-alpine
 RUN apk update \
     && apk add --no-cache icu-dev icu-data-full \
     && docker-php-ext-install intl \
-    && docker-php-ext-install mysqli
+    && docker-php-ext-install mysqli \
+    && echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 WORKDIR /var/www
 RUN mkdir app \
     && mkdir app/model \
