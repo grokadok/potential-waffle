@@ -906,7 +906,7 @@ trait Gazet
         return $page;
     }
 
-    private function generatePage(array $parameters, array $recipient)
+    private function generatePage(array $parameters, array $recipient, string $gazetDate)
     {
         $page = <<<HTML
         <div class="page">
@@ -978,8 +978,8 @@ trait Gazet
                         // if publication
                         $type = 'publication';
                         $orientation = $publication['layout']['orientation'] === 1 ? 'landscape' : 'portrait';
-                        $pictureCount = $publication['layout']['identifier'][2];
-                        $pictureLayout = $pictureCount > 1 ? '_' . $pictureCount . $publication['layout']['identifier'][3] : '';
+                        $pictureCount = $publication['layout']['identifier'][3];
+                        $pictureLayout = $pictureCount > 1 ? '_' . $pictureCount . $publication['layout']['identifier'][4] : '';
                         // pictures
                         $pictures = '';
                         foreach ($publication['images'] as $image) {
@@ -1014,59 +1014,19 @@ trait Gazet
                                     <span class="text">
                                         $text
                                     </span>
-                                    <hr class="separator" />
+                                    <!-- <hr class="separator" />
                                     <div class="comment">
                                         <span class="comment-author">Amélie :</span>
                                         <span class="comment-text"
                                             >Quaerat dolor magnam quiquia labore.</span
                                         >
-                                    </div>
+                                    </div> -->
                                 </div>
                             </div>
                         </div>
                         HTML;
                         break;
                 }
-
-                // $page .= <<<HTML
-                // <div class="$type $size $orientation">
-                //     <div class="pics l-3a">
-                //         <div></div>
-                //         <div></div>
-                //         <div></div>
-                //     </div>
-                //     <div class="desc">
-                //         <div class="author">
-                //             <div class="avatar">
-                //                     <img src="$avatar" alt="" />
-                //             </div>
-                //             <div class="fullname-date">
-                //                 <div>
-                //                     <span class="firstname">{$author['first_name']}</span>
-                //                     <span class="lastname">{$author['last_name']}</span>
-                //                 </div>
-                //                 <div>$dateString</div>
-                //             </div>
-                //         </div>
-                //         <div class="content">
-                //             <h1 class="title">Titre : Lorem Ipsum</h1>
-                //             <span class="text">
-                //                 Lorem ipsum dolor sit amet consectetur
-                //                 adipisicing elit. Aliquam, animi molestias
-                //                 repudiandae laboriosam vel porro aliquid minima
-                //                 qui, facere voluptate.
-                //             </span>
-                //             <hr class="separator" />
-                //             <div class="comment">
-                //                 <span class="comment-author">Amélie :</span>
-                //                 <span class="comment-text"
-                //                     >Quaerat dolor magnam quiquia labore.</span
-                //                 >
-                //             </div>
-                //         </div>
-                //     </div>
-                // </div>
-                // HTML;
             } else if ($place['idgame'] !== null) {
                 // get game data
                 // game is an image, get it
@@ -1082,7 +1042,7 @@ trait Gazet
                     src="img/logo.svg"
                     alt="logo de l\'application"
                 />
-                <span>Pour {$recipient['display_name']} - Décembre 2022</span>
+                <span>Pour {$recipient['display_name']} - $gazetDate</span>
             </footer>
         </div>
         HTML;
@@ -1126,7 +1086,10 @@ trait Gazet
             $pages = $this->getGazettePages($idgazette);
             print('@@@ generate pdf 4' . PHP_EOL);
             // for each gazette page
-            foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient);
+            $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+            $formatter->setPattern('MMMM yyyy');
+            $dateString = ucfirst($formatter->format(strtotime($data['print_date'])));
+            foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient, $dateString);
             print('@@@ generate pdf 5' . PHP_EOL);
 
             $gazette .= <<<HTML
