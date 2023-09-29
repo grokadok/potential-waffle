@@ -5,16 +5,21 @@ FROM phpswoole/swoole:php8.1-alpine
 #     docker-php-ext-install mysqli &&\
 #     docker-php-ext-install intl
 
-ENV MUSL_LOCALE_DEPS cmake make musl-dev gcc gettext-dev libintl
-ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
+# ENV MUSL_LOCALE_DEPS cmake make musl-dev gcc gettext-dev libintl
+# ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
 
-RUN apk add --no-cache \
-    $MUSL_LOCALE_DEPS \
-    && wget https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
-    && unzip musl-locales-master.zip \
-      && cd musl-locales-master \
-      && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
-      && cd .. && rm -r musl-locales-master
+# RUN apk add --no-cache \
+#     $MUSL_LOCALE_DEPS \
+#     && wget https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
+#     && unzip musl-locales-master.zip \
+#       && cd musl-locales-master \
+#       && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
+#       && cd .. && rm -r musl-locales-master
+
+ENV MUSL_LOCPATH=/usr/local/share/i18n/locales/musl
+RUN apk add --update git cmake make musl-dev gcc gettext-dev libintl
+RUN cd /tmp && git clone https://gitlab.com/rilian-la-te/musl-locales.git
+RUN cd /tmp/musl-locales && cmake . && make && make install
 
 RUN apk add --no-cache icu-dev
 RUN docker-php-ext-configure intl
