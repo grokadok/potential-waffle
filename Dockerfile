@@ -5,6 +5,21 @@ FROM phpswoole/swoole:php8.1-alpine
 #     docker-php-ext-install mysqli &&\
 #     docker-php-ext-install intl
 
+ENV MUSL_LOCALE_DEPS cmake make musl-dev gcc gettext-dev libintl
+ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
+
+RUN apk add --no-cache \
+    $MUSL_LOCALE_DEPS \
+    && wget https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
+    && unzip musl-locales-master.zip \
+      && cd musl-locales-master \
+      && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
+      && cd .. && rm -r musl-locales-master
+
+RUN apk add --no-cache icu-dev
+RUN docker-php-ext-install intl
+RUN docker-php-ext-install mysqli
+
 WORKDIR /var/www
 
 # RUN apk add --no-cache icu-libs icu-dev \
@@ -27,20 +42,6 @@ WORKDIR /var/www
 # RUN echo "extension=intl.so" > /usr/local/etc/php/conf.d/intl.ini \
 #     && echo "intl.default_locale = fr_FR.UTF-8" >> /usr/local/etc/php/conf.d/intl.ini
 
-ENV MUSL_LOCALE_DEPS cmake make musl-dev gcc gettext-dev libintl
-ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
-
-RUN apk add --no-cache \
-    $MUSL_LOCALE_DEPS \
-    && wget https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
-    && unzip musl-locales-master.zip \
-      && cd musl-locales-master \
-      && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
-      && cd .. && rm -r musl-locales-master
-
-RUN apk add --no-cache icu-dev
-RUN docker-php-ext-install intl
-RUN docker-php-ext-install mysqli
 RUN mkdir app
 RUN mkdir app/model
 RUN mkdir app/jwt
