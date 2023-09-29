@@ -5,6 +5,8 @@ namespace bopdev;
 require_once __DIR__ . "/auth.php";
 require_once "gazet.php";
 
+use IntlDateFormatter;
+
 trait Http
 {
     use Auth;
@@ -505,17 +507,14 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // CHROMIUM CHECK BINARIES (994)
+            // CHECK LOCALE DATE (994)
             /////////////////////////////////////////////////////
 
             if ($f === 994) {
-                $path = getenv('CHROME_PATH');
-                print('$$$##@@ Path: ' . $path . PHP_EOL);
-                // print('%##%$#@$ Files: ' . count(scandir('./')));
-                var_dump(scandir('/var/www'));
-                // foreach ( as $file) {
-                //     print($file . PHP_EOL);
-                // }
+                $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
+                $formatter->setPattern('d MMMM');
+                $dateString = strtoupper($formatter->format(strtotime('2021-01-06')));
+                print('### Date string: ' . $dateString . PHP_EOL);
             }
 
             /////////////////////////////////////////////////////
