@@ -4,7 +4,6 @@
         "eaglewu/swoole-ide-helper": "dev-master"
     },
     "require": {
-        "firebase/php-jwt": "^6.3",
-        "chrome-php/chrome": "^1.9"
+        "firebase/php-jwt": "^6.3"
     }
 }

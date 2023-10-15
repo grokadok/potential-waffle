@@ -1,4 +1,4 @@
-FROM phpswoole/swoole:php8.3
+FROM phpswoole/swoole:php8.2
 # ENV AUTORELOAD_PROGRAMS: "swoole"
 # ENV AUTORELOAD_ANY_FILES: 0
 # ENV MYSQL_ADDON_HOST: "mysql"
@@ -12,9 +12,11 @@ FROM phpswoole/swoole:php8.3
 # COPY --from=chromium /usr/lib/chromium /usr/lib/chromium
 # Set environment variable CHROME_PATH
 # ENV CHROME_PATH=/usr/bin/chromium-browser
-RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* &&\
-    docker-php-ext-install mysqli &&\
-    docker-php-ext-install intl
+RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* \
+    && docker-php-ext-install mysqli \
+    && docker-php-ext-install intl \
+    && echo "memory_limit=256M" > /usr/local/etc/php/conf.d/memory-limit.ini
+
 WORKDIR /var/www/
 # ADD https://docs.aws.amazon.com/aws-sdk-php/v3/download/aws.zip ./
 # RUN curl -sS https://getcomposer.org/installer | php \

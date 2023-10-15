@@ -3,6 +3,7 @@
 namespace bopdev;
 
 use DateTime;
+use Exception;
 use Throwable;
 use IntlDateFormatter;
 
@@ -142,16 +143,6 @@ trait Gazet
         }
     }
 
-    private function checkPictureGazetteLink(int $idobject)
-    {
-        return !empty($this->db->request([
-            'query' => 'SELECT NULL FROM gazette WHERE cover_picture = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idobject],
-            'array' => true,
-        ]));
-    }
-
     private function checkPicturePublicationLinks(int $idobject)
     {
         return !empty($this->db->request([
@@ -170,15 +161,23 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Removes all orphan objects from s3 and db.
+     */
     private function cleanS3Bucket()
     {
         $s3Keys = $this->s3->listObjects()['Contents'];
         foreach ($s3Keys as &$key) $key = $key['Key'];
-        $dbKeys = $this->db->request([
-            'query' => 'SELECT name,ext FROM s3;',
-            'array' => true,
+        $dbObjects = $this->db->request([
+            'query' => 'SELECT idobject,name,ext FROM s3;',
         ]);
-        foreach ($dbKeys as &$key) $key = bin2hex($key[0]) . '.' . $key[1];
+        $dbKeys = [];
+        foreach ($dbObjects as $object) $dbKeys[] = bin2hex($object['name']) . '.' . $object['ext'];
+
+        // TODO: add check for objects (pictures, pdf) in db not linked to anything
+
+        print('#### s3Keys: ' . print_r($s3Keys, true) . PHP_EOL);
+        print('#### dbKeys: ' . print_r($dbKeys, true) . PHP_EOL);
 
         $s3Diff = array_diff($s3Keys, $dbKeys);
         if (!empty($s3Diff)) {
@@ -195,14 +194,21 @@ trait Gazet
 
         $dbOnly = array_diff($dbKeys, $s3Keys);
         if (!empty($dbOnly)) {
-            $dbOnlyStr = implode(',', $dbOnly);
+            // filter dbObjects array to keep only objects with name in dbOnly
+            $dbObjects = array_filter($dbObjects, function ($object) use ($dbOnly) {
+                return in_array(bin2hex($object['name']) . '.' . $object['ext'], $dbOnly);
+            });
+            foreach ($dbObjects as &$object) $object = $object['idobject'];
+            $dbOnlyStr = implode(',', $dbObjects);
+            print('#### dbOnlyStr: ' . $dbOnlyStr . PHP_EOL);
             $this->db->request([
-                'query' => 'DELETE FROM s3 WHERE idobject IN ' . $dbOnlyStr . ';',
+                'query' => 'DELETE FROM s3 WHERE idobject IN (' . $dbOnlyStr . ');',
             ]);
             print('#### Removed ' . count($dbOnly) . ' orphan objects from db.' . PHP_EOL);
-            unset($dbOnlyStr);
+            unset($dbOnlyStr, $dbObjects);
         }
-        unset($s3Diff, $dbOnly);
+
+        unset($s3Diff, $dbOnly, $dbKeys, $s3Keys);
         return true;
     }
 
@@ -337,43 +343,6 @@ trait Gazet
     }
 
     /**
-     * Mark family for deletion, immediate if no gazettes nor members.
-     * @return int Value > 0 = days before deletion, 0 = deleted, -1 = user not admin, -2 = running subscription
-     */
-    private function deleteFamily(int $iduser, int $idfamily)
-    {
-        // if user is admin of family
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return ['state' => -1];
-        // if no subscription is running for family recipients
-        if ($this->familyHasSubscriptions($idfamily)) return ['state' => -2];
-        // mark family for removal if gazettes (a month) or members (a week), else remove immediatly
-        if ($this->familyHasGazettes($idfamily)) {
-            $this->db->request([
-                'query' => 'UPDATE family SET end = DATE_ADD(NOW(),INTERVAL 31 DAY) WHERE idfamily = ? LIMIT 1;', // TODO: set end date to a year later
-                'type' => 'i',
-                'content' => [$idfamily],
-            ]);
-            return ['state' => 31];
-        }
-        if ($this->familyHasOtherMembers($iduser, $idfamily)) {
-            $this->db->request([
-                'query' => 'UPDATE family SET end = DATE_ADD(NOW(),INTERVAL 7 DAY) WHERE idfamily = ? LIMIT 1;',
-                'type' => 'i',
-                'content' => [$idfamily],
-            ]);
-            return ['state' => 7];
-        }
-        $this->db->request([
-            'query' => 'UPDATE family SET end = NOW() WHERE idfamily = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idfamily],
-        ]);
-
-        $this->removeFamilyData($iduser, $idfamily);
-        return ['state' => 0, 'default' => $this->getUserDefaultFamily($iduser)];
-    }
-
-    /**
      * Sets familyInvitation into family for email.
      * @return bool False if inviter is not from family (should not happen but hey, shit happens)
      */
@@ -429,7 +398,6 @@ trait Gazet
                 $data
             );
         }
-
         return true;
     }
 
@@ -726,14 +694,10 @@ trait Gazet
     private function generateCover(array $data, array $recipient)
     {
         // date
-        // $date = new DateTime($data['print_date']);
-        // $date->setLocale('fr_FR');
         $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
         $formatter->setPattern('d MMMM');
         $dateString = strtoupper($formatter->format(strtotime($data['print_date'])));
         $year = substr($data['print_date'], 0, 4);
-        // day-month = first day of print date + 1 month
-        // year = if month = 12, year + 1, else year
         // address
         $address = [strtoupper($recipient['address']['name']), strtoupper($recipient['address']['field1'])];
         if (!empty($recipient['address']['field2'])) $address[] = strtoupper($recipient['address']['field2']);
@@ -918,9 +882,9 @@ trait Gazet
                 if ($place['idpublication'] !== null) {
                     // get publication data
                     $publication = $this->getPublicationData($place['idpublication']);
-                    print('@@@ generate page publication start' . PHP_EOL);
-                    var_dump($publication);
-                    print('@@@ generate page publication end' . PHP_EOL);
+                    // print('@@@ generate page publication start' . PHP_EOL);
+                    // var_dump($publication);
+                    // print('@@@ generate page publication end' . PHP_EOL);
 
                     // parse publication date
                     $date = new DateTime($publication['created']);
@@ -1058,6 +1022,12 @@ trait Gazet
     private function generatePDF(int $idgazette)
     {
         try {
+            $memoryUsage = memory_get_usage(true);
+            $memoryUsageMB = $memoryUsage / 1024 / 1024;
+            $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
+            $color = "\033[38;5;{$colorCode}m";
+            $resetColor = "\033[0m";
+            echo "{$color}Memory usage: {$memoryUsageMB} MB{$resetColor}\n";
             print('@@@ Init generate pdf' . PHP_EOL);
             $serverPath = getenv('SERVER_URL');
             // get gazette data (cover, recipient, type)
@@ -1105,27 +1075,19 @@ trait Gazet
             </html>
             HTML;
 
-
             // generate random file name
             $filename = bin2hex(random_bytes(16)) . '.html';
             // save $gazette string into html file
             file_put_contents('./public/' . $filename, $gazette);
 
-            // get assets (images, fonts, css...) to temp folder
-
             // generate pdf from HTML file
-            // $pdf = $this->chrome->generatePDF($gazette);
-            // $pdf = $this->browserless->pdfFromHtml($gazette);
             $pdf = $this->browserless->pdfFromUrl($filename);
             if (empty($pdf)) throw new Throwable('PDF is empty');
             print('@@@ generate pdf 6' . PHP_EOL);
             // store in local storage
             $file = './file.pdf';
             file_put_contents($file, $pdf);
-
-            // remove local html file
-            unlink('./public/' . $filename);
-            // store pdf in s3
+            // store in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
             // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
             unset($pdf);
@@ -1141,6 +1103,12 @@ trait Gazet
                 'content' => [$idObject, $idgazette],
             ]);
             print('@@@ generate pdf 9' . PHP_EOL);
+            $memoryUsage = memory_get_usage(true);
+            $memoryUsageMB = $memoryUsage / 1024 / 1024;
+            $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
+            $color = "\033[38;5;{$colorCode}m";
+            $resetColor = "\033[0m";
+            echo "{$color}Memory usage: {$memoryUsageMB} MB{$resetColor}\n";
             return true;
         } catch (Throwable $e) {
             print('@@@ generate pdf error' . PHP_EOL);
@@ -1220,6 +1188,16 @@ trait Gazet
         ])[0][0];
     }
 
+    private function getCoverFromPicture(int $idobject)
+    {
+        return $this->db->request([
+            'query' => 'SELECT cover FROM publication_has_picture WHERE full_size = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idobject],
+            'array' => true,
+        ])[0][0];
+    }
+
     private function getCoverPictureModifications(int $idgazette)
     {
         $data = [];
@@ -1295,7 +1273,7 @@ trait Gazet
         if (empty($recipients)) return [];
         $recipients = implode(',', $recipients);
         return $this->db->request([
-            'query' => 'SELECT idgazette,print_date,printed,cover_mini,pdf,type FROM gazette WHERE idrecipient IN (' . $recipients . ');',
+            'query' => 'SELECT idrecipient,idgazette,print_date,printed,cover_mini,pdf,type FROM gazette WHERE idrecipient IN (' . $recipients . ') ORDER BY print_date DESC;',
         ]);
     }
 
@@ -1498,6 +1476,10 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns gazettes with given cover picture's id.
+     * @return int[]
+     */
     private function getGazettesByCoverPicture(int $idobject)
     {
         $gazettes = $this->db->request([
@@ -1506,6 +1488,7 @@ trait Gazet
             'content' => [$idobject],
             'array' => true,
         ]);
+        if (empty($gazettes)) return [];
         foreach ($gazettes as &$gazette) $gazette = $gazette[0];
         return $gazettes;
     }
@@ -1754,6 +1737,16 @@ trait Gazet
         return $date->format('Y-m-d');
     }
 
+    private function getPictureData(int $idfullsize)
+    {
+        $data = $this->db->request([
+            'query' => 'SELECT full_size,crop,cover,mini,place FROM publication_has_picture WHERE full_size = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfullsize],
+        ]);
+        return empty($data) ? [] : $data[0];
+    }
+
     private function getPublicationAuthor(int $idpublication)
     {
         return $this->db->request([
@@ -1872,7 +1865,7 @@ trait Gazet
     private function getPublicationPictures(int $idpublication)
     {
         return $this->db->request([
-            'query' => 'SELECT idobject,place,title FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
+            'query' => 'SELECT full_size,crop,place,title FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
             'type' => 'i',
             'content' => [$idpublication],
         ]);
@@ -2127,7 +2120,7 @@ trait Gazet
     private function getRecipientGazettes(int $idrecipient)
     {
         return $this->db->request([
-            'query' => 'SELECT idgazette,object_key,date FROM gazette WHERE idrecipient = ?;',
+            'query' => 'SELECT idrecipient,idgazette,print_date,printed,cover_mini,pdf,type FROM gazette WHERE idrecipient = ? ORDER BY print_date DESC;',
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
@@ -2707,6 +2700,35 @@ trait Gazet
     }
 
     /**
+     * Mark family for deletion, immediate if no members.
+     * @return int Value > 0 = days before deletion, 0 = deleted, -1 = user not admin, -2 = running subscription
+     */
+    private function removeFamily(int $iduser, int $idfamily)
+    {
+        // if no subscription is running for family recipients
+        if ($this->familyHasSubscriptions($idfamily)) return ['state' => -2];
+        // mark family for removal if gazettes (a month) or members (a week), else remove immediatly
+        if ($this->familyHasOtherMembers($iduser, $idfamily)) {
+            $delay = $this->familyHasGazettes($idfamily) ? 31 : 7;
+            $this->db->request([
+                'query' => 'UPDATE family SET end = DATE_ADD(NOW(),INTERVAL ' . $delay . ' DAY) WHERE idfamily = ? LIMIT 1;',
+                'type' => 'i',
+                'content' => [$idfamily],
+            ]);
+            // send notification to members
+            return ['state' => $delay];
+        }
+        $this->db->request([
+            'query' => 'UPDATE family SET end = NOW() WHERE idfamily = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idfamily],
+        ]);
+
+        $this->removeFamilyData($iduser, $idfamily);
+        return ['state' => 0, 'default' => $this->getUserDefaultFamily($iduser)];
+    }
+
+    /**
      * Removes permanently family data.
      */
     private function removeFamilyData(int $iduser, int $idfamily)
@@ -2838,7 +2860,7 @@ trait Gazet
         ];
         $this->sendData([$iduser, ...$members], $data);
 
-        // return true;
+        // return default family data;
         return [
             'default' => $default,
             'family' => $this->userGetFamilyData($iduser, $idfamily),
@@ -2861,7 +2883,7 @@ trait Gazet
         }
         // pictures
         $pictures = $this->getPublicationPictures($idpublication);
-        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject'], $idpublication);
+        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['full_size'], $idpublication);
         // text
         $this->removePublicationText($idpublication);
         // movies
@@ -2907,21 +2929,30 @@ trait Gazet
         return true;
     }
 
+    /**
+     * Set the gazette's cover after publication change.
+     * @param int $idgazette
+     */
     private function replaceGazetteCover(int $idgazette, int $idobject)
     {
+        // TODO: doesn't replace anything, rename to setGazetteCover, may be used in generateGazette
         $publications = $this->getGazettePublications($idgazette);
         if (empty($publications)) return $this->db->request([
             'query' => 'UPDATE gazette SET cover_picture = NULL WHERE idgazette = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idgazette],
         ]);
+        // order publications by likes
+        $publications = $this->orderPublicationsByLikes($publications);
+
+
         $newPicture = null;
         for ($i = 0; $i < count($publications); $i++) {
             $pictures = $this->getPublicationPictures($publications[$i]);
             if (!empty($pictures)) {
                 for ($p = 0; $p < count($pictures); $p++) {
-                    if ($pictures[$p]['idobject'] !== $idobject) {
-                        $newPicture = $pictures[$p]['idobject'];
+                    if ($pictures[$p]['cover'] !== $idobject) {
+                        $newPicture = $pictures[$p]['cover'];
                         break;
                     }
                 }
@@ -2939,18 +2970,23 @@ trait Gazet
         ]);
     }
 
-    private function removePublicationPicture(int $idobject, int $idpublication)
+    private function removePublicationPicture(int $idfullsize, int $idpublication)
     {
-        if ($this->checkPictureGazetteLink($idobject)) {
-            $gazettes = $this->getGazettesByCoverPicture($idobject);
-            foreach ($gazettes as $gazette) $this->replaceGazetteCover($gazette, $idobject);
-        }
-        $this->s3->deleteObject($this->getS3ObjectKeyFromId($idobject));
-        $this->db->request([
-            'query' => 'DELETE FROM s3 WHERE idobject = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idobject],
-        ]);
+        $data = $this->getPictureData($idfullsize);
+        // TODO: edit to handle cover and miniature too
+        // $gazettes = $this->getGazettesByCoverPicture($data['cover']);
+        // if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->replaceGazetteCover($gazette, $data['cover']);
+
+        // for each crop, full_size, cover, mini, remove s3 object if not null
+        foreach ([$data['full_size'], $data['mini'], $data['cover'], $data['crop']] as $idobject)
+            if (!empty($idobject)) {
+                $this->s3->deleteObject($this->getS3ObjectKeyFromId($idobject));
+                $this->db->request([
+                    'query' => 'DELETE FROM s3 WHERE idobject = ? LIMIT 1;',
+                    'type' => 'i',
+                    'content' => [$idobject],
+                ]);
+            }
         $this->reorderPublicationPictures($idpublication);
         return true;
     }
@@ -2981,7 +3017,8 @@ trait Gazet
 
     private function removeRecipient(int $idfamily, int $idrecipient)
     {
-        // TODO: remove gazettes from storage if recipient is not a user.
+        $gazettes = $this->getRecipientGazettes($idrecipient);
+        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->removeGazette($gazette['idgazette']);
 
         $data = $this->db->request([
             'query' => 'SELECT display_name,avatar FROM recipient WHERE idrecipient = ? LIMIT 1;',
@@ -3126,6 +3163,18 @@ trait Gazet
         ]);
     }
 
+    private function removeUser($iduser)
+    {
+        // delete avatar is any
+        $this->removeUserAvatar($iduser);
+        $this->db->request([
+            'query' => 'DELETE FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+        ]);
+        return true;
+    }
+
     private function removeUserAvatar($iduser)
     {
         $idobject = $this->getUserAvatar($iduser);
@@ -3169,7 +3218,7 @@ trait Gazet
     private function reorderPublicationPictures(int $idpublication)
     {
         $pictures = $this->db->request([
-            'query' => 'SELECT idobject FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
+            'query' => 'SELECT crop FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
             'type' => 'i',
             'content' => [$idpublication],
             'array' => true,
@@ -3179,7 +3228,7 @@ trait Gazet
         $place = 1;
         foreach ($pictures as $picture) {
             $this->db->request([
-                'query' => 'UPDATE publication_has_picture SET place = ? WHERE idobject = ? AND idpublication = ?;',
+                'query' => 'UPDATE publication_has_picture SET place = ? WHERE crop = ? AND idpublication = ?;',
                 'type' => 'iii',
                 'content' => [$place++, $picture[0], $idpublication],
             ]);
@@ -3194,8 +3243,9 @@ trait Gazet
         if (empty($tokens)) return;
         $data['notification'] = false;
         $this->serv->task([
-            'tokens' => $tokens,
             'data' => $data,
+            'task' => 'messaging',
+            'tokens' => $tokens,
         ]);
         return;
     }
@@ -3207,10 +3257,11 @@ trait Gazet
         if (empty($tokens)) return;
         $data['notification'] = true;
         $this->serv->task([
-            'tokens' => $tokens,
-            'title' => $title,
             'body' => $message,
             'data' => $data,
+            'task' => 'messaging',
+            'title' => $title,
+            'tokens' => $tokens,
         ]);
         return;
     }
@@ -3551,20 +3602,33 @@ trait Gazet
      */
     private function setPublicationPicture(int $idpublication, array $picture)
     {
-        empty($this->db->request([
-            'query' => 'SELECT NULL FROM publication_has_picture WHERE idpublication = ? AND idobject = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$idpublication, $picture['id']],
-        ])) ?
+        $data = $this->getPictureData($picture['full_size']);
+        print('@@@ data: ' . print_r($data, true) . PHP_EOL);
+        print('@@@ picture: ' . print_r($picture, true) . PHP_EOL);
+        if (empty($data)) {
             $this->db->request([
-                'query' => 'INSERT INTO publication_has_picture (idpublication,idobject,place,title) VALUES (?,?,?,?);',
-                'type' => 'iiis',
-                'content' => [$idpublication, $picture['id'], $picture['place'], $picture['title'] ?? ''],
-            ]) : $this->db->request([
-                'query' => 'UPDATE publication_has_picture SET place = ?, title = ? WHERE idpublication = ? AND idobject = ? LIMIT 1;',
-                'type' => 'isii',
-                'content' => [$picture['place'], $picture['title'] ?? '', $idpublication, $picture['id']],
+                'query' => 'INSERT INTO publication_has_picture (idpublication,full_size,cover,crop,mini,place,title) VALUES (?,?,?,?,?,?,?);',
+                'type' => 'iiiiiis',
+                'content' => [$idpublication, $picture['full_size'], $picture['cover'], $picture['crop'], $picture['mini'], $picture['place'], $picture['title'] ?? ''],
             ]);
+            return true;
+        }
+        // update db
+        $this->db->request([
+            'query' => 'UPDATE publication_has_picture SET cover = ?, crop = ?, mini = ?,place = ?, title = ? WHERE idpublication = ? AND full_size = ? LIMIT 1;',
+            'type' => 'iiiisii',
+            'content' => [$picture['cover'], $picture['crop'], $picture['mini'], $picture['place'], $picture['title'] ?? '', $idpublication, $picture['full_size']],
+        ]);
+        // foreach picture, check if different
+        if ($data['crop'] !== $picture['crop']) {
+            $this->removeS3Object($data['crop']);
+        }
+        if ($data['mini'] !== $picture['mini']) {
+            $this->removeS3Object($data['mini']);
+        }
+        if ($data['cover'] !== $picture['cover']) {
+            $this->removeS3Object($data['cover']);
+        }
         return true;
     }
 
@@ -3682,6 +3746,12 @@ trait Gazet
         ]);
     }
 
+    /**
+     * Moves S3 object to a random key, stores it in db and returns its ID.
+     * @param int $iduser Object's owner.
+     * @param string $key Object's key.
+     * @return int Object's ID.
+     */
     private function storeS3Object(int $iduser, string $key)
     {
         $newObject = $this->s3->move($key);
@@ -3790,7 +3860,7 @@ trait Gazet
         // get gazette_type data
         $type = $this->getGazetteTypeData($gazette['type']);
 
-        // remove gazettes pages // TODO: maybe keep modifications ?
+        // remove gazettes pages
         $this->db->request([
             'query' => 'DELETE FROM gazette_page WHERE idgazette = ?;',
             'type' => 'i',
@@ -3948,8 +4018,8 @@ trait Gazet
         }
 
         // generate pdf
-        // TODO: $this->serv->task() to avoid blocking
-        $this->generatePdf($idgazette);
+        // $this->generatePdf($idgazette);
+        $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
     }
 
     /**
@@ -4029,45 +4099,21 @@ trait Gazet
                 'content' => [...$content, $idpublication],
             ]);
         }
-        // TODO: if journal, remove all images but first place
-        if ($parameters['layout'][1] === 'j') {
-            if ($parameters['images'] !== null) {
-                // remove from $parameters['images'] all images but first place
-                $images = [];
-                foreach ($parameters['images'] as $index => $image) {
-                    if ($image['place'] !== 1) {
-                        $this->removeS3Object($image['id']);
-                        $images[] = $index;
-                    }
-                }
-                foreach ($images as $index) unset($parameters['images'][$index]);
-            } else {
-                // remove all images but first place in db
-                // get images from db
-                $pictures = $this->getPublicationPictures($idpublication);
-                foreach ($pictures as $picture) {
-                    if ($picture['place'] !== 1) $this->removePublicationPicture($picture['idobject'], $idpublication);
-                }
-            }
-        }
         // images update
         if ($parameters['images'] !== null) {
             $pictures = $this->getPublicationPictures($idpublication); // get publication images
             // if no images in parameters, remove all images
-            if (empty($parameters['images'])) foreach ($pictures as $picture) $this->removePublicationPicture($picture['idobject'], $idpublication);
+            if (empty($parameters['images'])) foreach ($pictures as $picture) $this->removePublicationPicture($picture['full_size'], $idpublication);
             // else apply modifications
             else {
                 $ids = [];
                 foreach ($parameters['images'] as $image) {
-                    $ids[] = $image['id'];
-                    $this->setPublicationPicture($idpublication, $image);
+                    $ids[] = $image['full_size'];
+                    if ($image['crop'] != null) $this->setPublicationPicture($idpublication, $image);
                 }
                 foreach ($pictures as $picture) // remove images not in parameters
-                {
-                    if (!in_array($picture['idobject'], $ids, false)) {
-                        $this->removePublicationPicture($picture['idobject'], $idpublication);
-                    }
-                }
+                    if (!in_array($picture['full_size'], $ids, false))
+                        $this->removePublicationPicture($picture['full_size'], $idpublication);
             }
         }
         // gazettes update
@@ -4387,7 +4433,7 @@ trait Gazet
             if (empty($family['invitation']) && empty($family['request'])) {
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
                 $family['members'] = $this->getFamilyMembersData($family['id']); // get members
-                $family['gazettes'] = $this->getFamilyGazettes($family['id']); // get gazettes
+                // $family['gazettes'] = $this->getFamilyGazettes($family['id']); // get gazettes
                 if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
                     $family['invitations'] = $this->getFamilyInvitations($family['id']);
                     $family['requests'] = $this->getFamilyRequests($family['id']);
@@ -4451,10 +4497,10 @@ trait Gazet
         return $gazette;
     }
 
-    private function userGetGazettes(int $iduser, int $idfamily)
+    private function userGetGazettes(int $iduser, int $idfamily, int $idrecipient)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
-        return $this->getFamilyGazettes($idfamily);
+        return $this->getRecipientGazettes($idrecipient);
     }
 
     private function userGetPublicationData(int $iduser, int $idfamily, int $idpublication)
@@ -4675,6 +4721,39 @@ trait Gazet
         return true;
     }
 
+    private function userRemovesAccount($iduser)
+    {
+        try {
+            $response = ["state" => 0];
+            // if user is in family(ies)
+            $families = $this->getUserFamilies($iduser);
+            // try remove member from family
+            if (!empty($families)) foreach ($families as $family) {
+                if (!$this->familyHasOtherMembers($family['id'], $iduser)) {
+                    $removal = $this->userRemovesFamily($iduser, $family['id']);
+                    if ($removal['state'] !== 0) throw (new Exception('userRemovesAccount: userRemovesFamily: ' . $removal['state']));
+                } else {
+                    if ($family['invitation']) {
+                        $this->familyInvitationRemove($iduser, $family['id']);
+                    }
+                    if ($family['request']) {
+                        $this->familyRequestRemove($iduser, $family['id']);
+                    }
+                    if ($family['member'] || $family['admin'] || $family['recipient']) {
+                        $removal = $this->userRemovesMember($iduser, $family['idfamily']);
+                        if ($removal['state'] !== 0) throw (new Exception('userRemovesAccount: userRemovesMember: ' . $removal['state']));
+                    }
+                }
+            }
+            // remove user
+            $this->removeUser($iduser);
+            return $response;
+        } catch (Exception $e) {
+            print('### Exception: userRemovesAccount: ' . $e->getMessage() . PHP_EOL);
+            return false;
+        }
+    }
+
     private function userRemovesComment(int $iduser, int $idfamily, int $idpublication, int $idcomment)
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsCommentsAuthor($iduser, $idcomment)) return false;
@@ -4682,15 +4761,21 @@ trait Gazet
         return $this->getPublicationCommentsData($iduser, $idfamily, $idpublication);
     }
 
-    private function userRemovesMember(int $iduser, int $idfamily, ?int $idmember)
+    private function userRemovesFamily(int $iduser, int $idfamily)
+    {
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return ['state' => -1];
+        return $this->removeFamily($iduser, $idfamily);
+    }
+
+    private function userRemovesMember(int $iduser, int $idfamily, int $idmember = null)
     {
         $idmember = $idmember ?? $iduser;
 
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return false;
-        if ($this->userIsAdminOfFamily($idmember, $idfamily)) return 1;
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return ['state' => -1];
+        if ($this->userIsAdminOfFamily($idmember, $idfamily)) return ['state' => 1];
         $recipient = $this->userIsRecipientOfFamily($idmember, $idfamily);
         if ($recipient) {
-            if ($this->getRecipientSubscription($recipient)) return 2;
+            if ($this->getRecipientSubscription($recipient)) return ['state' => 2];
             else $this->removeRecipient($idfamily, $recipient);
         }
         // if user is referent of family
@@ -4733,13 +4818,7 @@ trait Gazet
         }
 
         // remove member from family
-        return $this->removeMember($idmember, $idfamily);
-
-        // return [
-        //     'state' => 0,
-        //     // 'default' => $iduser === $idmember ? $default : false,
-        //     'family' => $this->userGetFamilyData($iduser, $idfamily)
-        // ];
+        return ['state' => 0, ...$this->removeMember($idmember, $idfamily)];
     }
 
     private function userRemovesPublication(int $iduser, int $idfamily, int $idpublication)
@@ -4903,11 +4982,12 @@ trait Gazet
         $this->updatePublication($parameters['idpublication'], $parameters);
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($parameters['layout'])) $parameters['layout'] = ['identifier' => $parameters['layout']];
-        if (!empty($parameters['images'])) foreach ($parameters['images'] as &$image) {
-            $image['idobject'] = $image['id'];
-            unset($image['id']);
-        }
+        // if (!empty($parameters['images'])) foreach ($parameters['images'] as &$image) {
+        //     $image['idobject'] = $image['id'];
+        //     unset($image['id']);
+        // }
         // TODO: if publication private, don't send to other members the updates
+        // TODO: handle publication update notification handling client side with new images
         if (!empty($members))
             $this->sendData($members, [
                 'family' => $idfamily,

@@ -2,19 +2,20 @@
 
 namespace bopdev;
 
-require_once __DIR__ . "/auth.php";
-require_once "gazet.php";
+// require_once __DIR__ . "/auth.php";
+// require_once "gazet.php";
 
 use IntlDateFormatter;
 
 trait Http
 {
-    use Auth;
-    use Gazet;
+    // use Auth;
+    // use Gazet;
     private function task($post)
     {
         // var_dump($post);
         // var_dump($post['f']);
+        print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
         try {
             $f = intval($post["f"]);
             $responseType = 'application/json';
@@ -107,7 +108,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 4) {
-                $responseContent = ['f' => 4, 'deleted' => $this->deleteFamily($iduser, $post['i'])];
+                $responseContent = ['f' => 4, 'deleted' => $this->userRemovesFamily($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -423,11 +424,11 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // GET FAMILY GAZETTES (46)
+            // GET RECIPIENT GAZETTES (46)
             /////////////////////////////////////////////////////
 
             if ($f === 46) {
-                $responseContent = ['f' => 46, 'gazettes' => $this->userGetGazettes($iduser, $post['i'])];
+                $responseContent = ['f' => 46, 'gazettes' => $this->userGetGazettes($iduser, $post['i'], $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -468,6 +469,14 @@ trait Http
 
             if ($f === 51) {
                 $responseContent = ['f' => 51, 'publication' => $this->userGetPublicationData($iduser, $post['i'], $post['p'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // DELETE USER (52)
+            /////////////////////////////////////////////////////
+
+            if ($f === 52) {
+                $responseContent = ['f' => 52, 'removed' => $this->userRemovesAccount($iduser)];
             }
 
 

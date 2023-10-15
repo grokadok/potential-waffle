@@ -6,6 +6,7 @@ foreach ([
     __DIR__ . '/vendor/autoload.php',
     __DIR__ . '/app/model/functions.php',
     __DIR__ . '/app/model/dbrequest.php',
+    __DIR__ . '/app/model/gazet.php',
     __DIR__ . '/app/model/http.php',
     __DIR__ . '/app/model/websocket.php',
     __DIR__ . '/app/model/auth.php',
@@ -16,7 +17,6 @@ foreach ([
     // __DIR__ . '/app/model/chrome.php',
 ] as $value) require_once $value;
 if (getenv('ISLOCAL')) require_once __DIR__ . '/config/env.php';
-
 
 use Swoole\Coroutine;
 use Swoole\WebSocket\Server;
@@ -32,6 +32,7 @@ use Throwable;
 class FWServer
 {
     use Http;
+    use Gazet;
     // use Websocket;
     use Auth;
 
@@ -50,8 +51,9 @@ class FWServer
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
             'worker_num' => 4, // Open 4 Worker Process
-            'task_worker_num' => 1, // Open 2 Task Worker Process
-            'open_cpu_affinity' => true,
+            'task_enable_coroutine' => true,
+            'task_worker_num' => 2, // Open 2 Task Worker Process
+            // 'open_cpu_affinity' => true,
             // "open_http2_protocol" => true // not compatible with stateless, only dispatch_modes 2 & 4
             // 'max_request' => 4, // Each worker process max_request is set to 4 times
             // 'document_root'   => '',
@@ -327,32 +329,44 @@ class FWServer
         } else print('!!!! No db connection. !!!!' . PHP_EOL);
     }
 
-    public function onTask($serv, $task_id, $srcWorkerId, $data)
+    public function onTask($serv, $task)
+    // public function onTask($serv, $task_id, $srcWorkerId, $data)
     {
         try {
-            echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
-            $response = isset($data['body']) ?
-                $this->messaging->sendNotification(
-                    $data['tokens'],
-                    $data["title"],
-                    $data["body"],
-                    $data["data"]
-                ) :
-                $this->messaging->sendData(
-                    $data['tokens'],
-                    $data["data"]
-                );
-            if (!empty($response)) {
-                $this->serv->sendMessage([
-                    'code' => 1,
-                    'data' => $response,
-                ], $srcWorkerId);
+            // echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
+            print("New AsyncTask[id={$task->id}] to worker[id={$task->worker_id}]\n");
+            // var_dump($task);
+            switch ($task->data['task']) {
+                case 'messaging':
+                    $response = isset($task->data['body']) ?
+                        $this->messaging->sendNotification(
+                            $task->data['tokens'],
+                            $task->data["title"],
+                            $task->data["body"],
+                            $task->data["data"]
+                        ) :
+                        $this->messaging->sendData(
+                            $task->data['tokens'],
+                            $task->data["data"]
+                        );
+                    if (!empty($response)) {
+                        $this->serv->sendMessage([
+                            'code' => 1,
+                            'data' => $response,
+                        ], $task->worker_id);
+                    }
+                    break;
+                case 'pdf':
+                    $this->generatePdf($task->data['idgazette']);
+                    break;
             }
-            $serv->finish("AsyncTask[id={$task_id}] -> OK");
+            // $serv->finish("AsyncTask[id={$task_id}] -> OK");
+            $task->finish("AsyncTask -> OK");
         } catch (Throwable $e) {
             print('### TASK ERROR' . PHP_EOL);
             print($e->getMessage());
-            $serv->finish("AsyncTask[id={$task_id}] -> ERROR");
+            // $serv->finish("AsyncTask[id={$task_id}] -> ERROR");
+            $task->finish("AsyncTask -> ERROR");
         }
     }
 

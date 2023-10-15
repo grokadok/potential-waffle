@@ -219,7 +219,8 @@ class S3Client
     public function objectExist(string $key, string $bucket = null, bool $includeDeleteMarkers = false)
     {
         try {
-            return $this->client->doesObjectExistV2($bucket ?? $this->bucket, $key);
+            return $this->client->doesObjectExist($bucket ?? $this->bucket, $key);
+            // return $this->client->doesObjectExistV2($bucket ?? $this->bucket, $key);
         } catch (S3Exception $e) {
             return print($e->getMessage() . PHP_EOL);
         }

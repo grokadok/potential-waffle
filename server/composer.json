@@ -1,7 +1,6 @@
 {
     "require": {
         "aws/aws-sdk-php": "^3.252.6",
-        "kreait/firebase-php": "^7.3",
-        "chrome-php/chrome": "^1.9"
+        "kreait/firebase-php": "^7.3"
     }
 }

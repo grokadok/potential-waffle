@@ -136,6 +136,17 @@ function getFileContentAndExtension($url)
 }
 
 /**
+ * Docker SIGTERM handler.
+ * @param int $signo The signal number.
+ */
+// function handleSigterm($signo)
+// {
+//     echo "Received SIGTERM, shutting down...\n";
+//     // Perform any necessary cleanup or shutdown tasks here
+//     exit(0);
+// }
+
+/**
  * Sort an associative array of associative arrays by a parameter in the inner arrays
  * and include the outer array key as a parameter in the resulting array of inner arrays.
  *
