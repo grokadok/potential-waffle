@@ -906,7 +906,7 @@ trait Gazet
                             $type = 'notebook';
                             $picture = '';
                             if (!empty($publication['images'])) {
-                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['idobject']));
+                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['crop']));
                                 $picture = <<<HTML
                                 <div class="pic__frame">
                                     <div class="pic__pic">
@@ -948,7 +948,7 @@ trait Gazet
                             // pictures
                             $pictures = '';
                             foreach ($publication['images'] as $image) {
-                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['idobject']));
+                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['crop']));
                                 $pictures .= <<<HTML
                                 <div>
                                     <img src="$url" alt="">
@@ -2935,7 +2935,6 @@ trait Gazet
      */
     private function replaceGazetteCover(int $idgazette, int $idobject)
     {
-        // TODO: doesn't replace anything, rename to setGazetteCover, may be used in generateGazette
         $publications = $this->getGazettePublications($idgazette);
         if (empty($publications)) return $this->db->request([
             'query' => 'UPDATE gazette SET cover_picture = NULL WHERE idgazette = ? LIMIT 1;',
@@ -2943,8 +2942,9 @@ trait Gazet
             'content' => [$idgazette],
         ]);
         // order publications by likes
-        $publications = $this->orderPublicationsByLikes($publications);
-
+        usort($publications, function ($a, $b) {
+            return $b['likes'] - $a['likes'];
+        });
 
         $newPicture = null;
         for ($i = 0; $i < count($publications); $i++) {
@@ -2973,9 +2973,9 @@ trait Gazet
     private function removePublicationPicture(int $idfullsize, int $idpublication)
     {
         $data = $this->getPictureData($idfullsize);
-        // TODO: edit to handle cover and miniature too
-        // $gazettes = $this->getGazettesByCoverPicture($data['cover']);
-        // if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->replaceGazetteCover($gazette, $data['cover']);
+        // TODO: edit to handle miniature too
+        $gazettes = $this->getGazettesByCoverPicture($data['cover']);
+        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->replaceGazetteCover($gazette, $data['cover']);
 
         // for each crop, full_size, cover, mini, remove s3 object if not null
         foreach ([$data['full_size'], $data['mini'], $data['cover'], $data['crop']] as $idobject)
@@ -3940,7 +3940,7 @@ trait Gazet
             if (empty($cover_picture)) {
                 $pictures = $this->getPublicationPictures($publications[$pub]['idpublication']);
                 if (!empty($pictures)) {
-                    $cover_picture = $pictures[0]['idobject'];
+                    $cover_picture = $pictures[0]['cover'];
                     $this->db->request([
                         'query' => 'UPDATE gazette SET cover_picture = ? WHERE idgazette = ?;',
                         'type' => 'ii',
