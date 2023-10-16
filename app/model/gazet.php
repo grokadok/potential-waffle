@@ -143,14 +143,14 @@ trait Gazet
         }
     }
 
-    private function checkPicturePublicationLinks(int $idobject)
-    {
-        return !empty($this->db->request([
-            'query' => 'SELECT NULL FROM publication_has_picture WHERE idobject = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idobject],
-        ]));
-    }
+    // private function checkPicturePublicationLinks(int $idobject)
+    // {
+    //     return !empty($this->db->request([
+    //         'query' => 'SELECT NULL FROM publication_has_picture WHERE idobject = ? LIMIT 1;',
+    //         'type' => 'i',
+    //         'content' => [$idobject],
+    //     ]));
+    // }
 
     private function checkRecipientNameAvailiability(int $idfamily, string $name)
     {
@@ -2775,7 +2775,7 @@ trait Gazet
         if (!empty($objects)) {
             if (!empty($objects['cover_mini'])) $this->removeS3Object($objects['cover_mini']);
             if (!empty($objects['pdf'])) $this->removeS3Object($objects['pdf']);
-            if (!empty($objects['cover_picture']) && !$this->checkPicturePublicationLinks($objects['cover_picture'])) $this->removeS3Object($objects['cover_picture']);
+            // if (!empty($objects['cover_picture']) && !$this->checkPicturePublicationLinks($objects['cover_picture'])) $this->removeS3Object($objects['cover_picture']);
         }
         // delete gazette
         $this->db->request([
@@ -3031,22 +3031,7 @@ trait Gazet
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
-        // $this->removeAddress($data['idaddress']); // automatic with foreign key
         if (!empty($data['avatar']) && !$this->checkAvatarUserLink($data['avatar'])) $this->removeS3Object($data['avatar']);
-        // if (empty($data['iduser'])) $this->removeRecipientGazettes($idrecipient); // automatic with foreign key
-        // $data = [
-        //     'date' => date('Y-m-d H:i:s'),
-        //     'family' => $idfamily,
-        //     'recipient' => $idrecipient,
-        //     'type' => 16,
-        // ];
-        // $members = $this->getFamilyMembers($idfamily,[$iduser]);
-        // $this->sendNotification(
-        //     $members,
-        //     'Destinataire supprimé',
-        //     'Le destinataire ' . $data['display_name'] . ' a été supprimé de la famille ' . $this->getFamilyName($idfamily) . '.',
-        //     $data,
-        // );
         return true;
     }
 
@@ -3061,29 +3046,6 @@ trait Gazet
             'content' => [$idrecipient],
         ]);
         return $idobject;
-    }
-
-    private function removeRecipientGazettes($idrecipient)
-    {
-        foreach ($this->db->request([
-            'query' => 'SELECT idgazette FROM gazette WHERE idrecipient = ?;',
-            'type' => 'i',
-            'content' => [$idrecipient],
-            'array' => true,
-        ]) as $gazette) $this->removeGazette($gazette[0]);
-
-        // TODO: replace with multi object single request
-
-        // create objects array [['key'=>string $key]]
-        // s3->deleteObjects($objects)
-
-        // then remove gazettes from db
-        // $this->db->request([
-        //     'query' => 'DELETE FROM gazette WHERE idrecipient = ?;',
-        //     'type' => 'i',
-        //     'content' => [$idrecipient],
-        // ]);
-        return true;
     }
 
     private function removeRecipientSubscription(int $iduser, int $idrecipient)

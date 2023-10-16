@@ -14,3 +14,4 @@ ssl.*
 /server/*
 !/server/server.php
 !/server/composer.json
+**/.DS_Store
