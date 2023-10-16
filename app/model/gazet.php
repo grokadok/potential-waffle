@@ -1067,7 +1067,6 @@ trait Gazet
                 $gazette .= $this->generatePage($pages[$i] ?? [], $recipient, $dateString);
             }
 
-            // foreach ($pages as $page) $gazette .= $this->generatePage($page, $recipient, $dateString);
             print('@@@ generate pdf 5' . PHP_EOL);
 
             $gazette .= <<<HTML
@@ -1084,6 +1083,8 @@ trait Gazet
             $pdf = $this->browserless->pdfFromUrl($filename);
             if (empty($pdf)) throw new Throwable('PDF is empty');
             print('@@@ generate pdf 6' . PHP_EOL);
+            // remove html file
+            unlink('./public/' . $filename);
             // store in local storage
             $file = './file.pdf';
             file_put_contents($file, $pdf);
@@ -3576,20 +3577,49 @@ trait Gazet
             ]);
             return true;
         }
+        $set = [];
+        $type = '';
+        $content = [];
+        if ($picture['cover'] !== null && $picture['cover'] !== $data['cover']) {
+            $set[] = 'cover = ?';
+            $type .= 'i';
+            $content[] = $picture['cover'];
+        }
+        if ($picture['crop'] !== null && $picture['crop'] !== $data['crop']) {
+            $set[] = 'crop = ?';
+            $type .= 'i';
+            $content[] = $picture['crop'];
+        }
+        if ($picture['mini'] !== null && $picture['mini'] !== $data['mini']) {
+            $set[] = 'mini = ?';
+            $type .= 'i';
+            $content[] = $picture['mini'];
+        }
+        if ($picture['place'] !== null && $picture['place'] !== $data['place']) {
+            $set[] = 'place = ?';
+            $type .= 'i';
+            $content[] = $picture['place'];
+        }
+        if ($picture['title'] !== null && $picture['title'] !== $data['title']) {
+            $set[] = 'title = ?';
+            $type .= 's';
+            $content[] = $picture['title'];
+        }
+        $set = implode(',', $set);
         // update db
         $this->db->request([
-            'query' => 'UPDATE publication_has_picture SET cover = ?, crop = ?, mini = ?,place = ?, title = ? WHERE idpublication = ? AND full_size = ? LIMIT 1;',
-            'type' => 'iiiisii',
-            'content' => [$picture['cover'], $picture['crop'], $picture['mini'], $picture['place'], $picture['title'] ?? '', $idpublication, $picture['full_size']],
+            'query' => 'UPDATE publication_has_picture SET ' . $set . ' WHERE idpublication = ? AND full_size = ? LIMIT 1;',
+            'type' => $type . 'ii',
+            'content' => [...$content, $idpublication, $picture['full_size']],
         ]);
         // foreach picture, check if different
-        if ($data['crop'] !== $picture['crop']) {
+        if ($data['crop'] !== null && $picture['crop'] !== null && $data['crop'] !== $picture['crop']) {
             $this->removeS3Object($data['crop']);
         }
-        if ($data['mini'] !== $picture['mini']) {
+        if ($data['mini'] !== null && $picture['mini'] !== null && $data['mini'] !== $picture['mini']) {
             $this->removeS3Object($data['mini']);
         }
-        if ($data['cover'] !== $picture['cover']) {
+        if ($data['cover'] !== null && $picture['cover'] !== null && $data['cover'] !== $picture['cover']) {
             $this->removeS3Object($data['cover']);
         }
         return true;
@@ -4080,7 +4110,8 @@ trait Gazet
                 $ids = [];
                 foreach ($parameters['images'] as $image) {
                     $ids[] = $image['full_size'];
-                    if ($image['crop'] != null) $this->setPublicationPicture($idpublication, $image);
+                    // if ($image['crop'] != null)
+                    $this->setPublicationPicture($idpublication, $image);
                 }
                 foreach ($pictures as $picture) // remove images not in parameters
                     if (!in_array($picture['full_size'], $ids, false))

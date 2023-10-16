@@ -488,7 +488,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 991) {
-                var_dump($this->s3->setBucketCors('gazet', [
+                var_dump($this->s3->setBucketCors(getenv('CELLAR_ADDON_BUCKET'), [
                     [
                         'AllowedHeaders' => ['*'],
                         'AllowedMethods' => ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
@@ -504,7 +504,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 992) {
-                var_dump($this->s3->getBucketCors('gazet'));
+                var_dump($this->s3->getBucketCors(getenv('CELLAR_ADDON_BUCKET')));
             }
 
             /////////////////////////////////////////////////////
