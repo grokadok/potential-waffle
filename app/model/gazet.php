@@ -3522,8 +3522,6 @@ trait Gazet
                 $this->setPublicationPicture($publication['idpublication'], $image);
             }
         }
-        // update gazette
-        $this->setGazettes($idfamily, $publication['created']);
         // set recipients' publication
         if (!empty($parameters['recipients'])) {
             $insert = [];
@@ -3533,6 +3531,8 @@ trait Gazet
                 'query' => 'INSERT INTO recipient_has_publication (idrecipient,idpublication) VALUES ' . $insert . ';',
             ]);
         }
+        // update gazette
+        $this->setGazettes($idfamily, $publication['created']);
         // send notifications
         $data = [
             'date' => $publication['created'],
@@ -3940,12 +3940,17 @@ trait Gazet
             if (empty($cover_picture)) {
                 $pictures = $this->getPublicationPictures($publications[$pub]['idpublication']);
                 if (!empty($pictures)) {
-                    $cover_picture = $pictures[0]['cover'];
-                    $this->db->request([
-                        'query' => 'UPDATE gazette SET cover_picture = ? WHERE idgazette = ?;',
-                        'type' => 'ii',
-                        'content' => [$cover_picture, $idgazette],
-                    ]);
+                    foreach ($pictures as $picture) {
+                        if ($picture['cover'] !== null) {
+                            $cover_picture = $picture['cover'];
+                            $this->db->request([
+                                'query' => 'UPDATE gazette SET cover_picture = ? WHERE idgazette = ?;',
+                                'type' => 'ii',
+                                'content' => [$cover_picture, $idgazette],
+                            ]);
+                            break;
+                        }
+                    }
                 }
             }
             if (!in_array($publications[$pub]['author'], $writers)) $writers[] = $publications[$pub]['author'];
