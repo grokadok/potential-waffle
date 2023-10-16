@@ -2951,8 +2951,9 @@ trait Gazet
             $pictures = $this->getPublicationPictures($publications[$i]);
             if (!empty($pictures)) {
                 for ($p = 0; $p < count($pictures); $p++) {
-                    if ($pictures[$p]['cover'] !== $idobject) {
-                        $newPicture = $pictures[$p]['cover'];
+                    $cover = $this->getPictureData($pictures[$p]['full_size'])['cover'];
+                    if ($cover !== null && $cover !== $idobject) {
+                        $newPicture = $cover;
                         break;
                     }
                 }
@@ -3851,6 +3852,7 @@ trait Gazet
      */
     private function updateGazette($idgazette)
     {
+        print('@@@ update gazette ' . $idgazette . PHP_EOL);
         // check if gazette is already printed
         if ($this->getGazettePrintStatus($idgazette)) return false;
         // get gazette data
@@ -3935,14 +3937,16 @@ trait Gazet
         // set writers & cover picture
         $writers = [];
         $cover_picture = $gazette['cover_picture'];
+        print('@@@ cover picture: ' . $cover_picture . PHP_EOL);
         for ($pub = 0; $pub < count($publications); $pub++) {
             // if cover picture is null and publication has image, set it as cover picture
             if (empty($cover_picture)) {
+                print('@@@ cover picture is null, parsing publication ' . $publications[$pub]['idpublication'] . ' pictures.' . PHP_EOL);
                 $pictures = $this->getPublicationPictures($publications[$pub]['idpublication']);
                 if (!empty($pictures)) {
                     foreach ($pictures as $picture) {
-                        if ($picture['cover'] !== null) {
-                            $cover_picture = $picture['cover'];
+                        $cover_picture = $this->getPictureData($picture['full_size'])['cover'];
+                        if ($cover_picture !== null) {
                             $this->db->request([
                                 'query' => 'UPDATE gazette SET cover_picture = ? WHERE idgazette = ?;',
                                 'type' => 'ii',
