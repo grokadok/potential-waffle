@@ -15,7 +15,7 @@ trait Http
     {
         // var_dump($post);
         // var_dump($post['f']);
-        print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
+        // print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
         try {
             $f = intval($post["f"]);
             $responseType = 'application/json';
@@ -532,7 +532,7 @@ trait Http
                 $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
                 $formatter->setPattern('d MMMM');
                 $dateString = strtoupper($formatter->format(strtotime('2021-01-06')));
-                print('### Date string: ' . $dateString . PHP_EOL);
+                // print('### Date string: ' . $dateString . PHP_EOL);
             }
 
             /////////////////////////////////////////////////////

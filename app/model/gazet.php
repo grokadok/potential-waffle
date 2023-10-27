@@ -4076,8 +4076,6 @@ trait Gazet
      */
     private function userUpdateMember(int $iduser, array $parameters)
     {
-        print('@@@ updateMember: ' . $iduser . PHP_EOL);
-        var_dump($parameters);
         $response = [];
         // if member's data modifed and is user
         if (!empty($parameters['user']['id']) && $iduser === $parameters['user']['id']) {
@@ -4102,8 +4100,6 @@ trait Gazet
                 $response['recipient'] = $this->getRecipientData($recipientId);
             }
         }
-        print('@@@ updateMember response: ' . $iduser . PHP_EOL);
-        var_dump($response);
         return $response;
     }
 
