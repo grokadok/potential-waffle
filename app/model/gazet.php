@@ -1738,13 +1738,17 @@ trait Gazet
         return $date->format('Y-m-d');
     }
 
-    private function getPictureData(int $idfullsize)
+    private function getPictureData(array $parameters)
     {
+        $where = !empty($parameters['full_size']) ? 'full_size' : 'crop';
         $data = $this->db->request([
-            'query' => 'SELECT full_size,crop,cover,mini,place FROM publication_has_picture WHERE full_size = ? LIMIT 1;',
+            'query' => 'SELECT full_size,crop,height,width,cover,mini,place FROM publication_has_picture WHERE ' . $where . ' = ? LIMIT 1;',
             'type' => 'i',
-            'content' => [$idfullsize],
+            'content' => [$parameters['full_size'] ?? $parameters['crop']],
         ]);
+        print('@@@ getPictureData start' . PHP_EOL);
+        print_r($data);
+        print('@@@ getPictureData end' . PHP_EOL);
         return empty($data) ? [] : $data[0];
     }
 
@@ -1866,7 +1870,7 @@ trait Gazet
     private function getPublicationPictures(int $idpublication)
     {
         return $this->db->request([
-            'query' => 'SELECT full_size,crop,place,title FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
+            'query' => 'SELECT full_size,crop,height,width,place,title FROM publication_has_picture WHERE idpublication = ? ORDER BY place ASC;',
             'type' => 'i',
             'content' => [$idpublication],
         ]);
@@ -2404,7 +2408,7 @@ trait Gazet
     private function getUserData(int $iduser)
     {
         return $this->db->request([
-            'query' => 'SELECT iduser as id,last_name,first_name,birthdate,email,phone,avatar,theme,autocorrect,capitalize FROM user WHERE iduser = ? LIMIT 1;',
+            'query' => 'SELECT iduser as id,last_name,first_name,birthdate,email,phone,avatar,theme,autocorrect,capitalize,fullsizeimages FROM user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$iduser],
         ])[0];
@@ -2884,7 +2888,7 @@ trait Gazet
         }
         // pictures
         $pictures = $this->getPublicationPictures($idpublication);
-        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['full_size'], $idpublication);
+        if (!empty($pictures)) foreach ($pictures as $picture) $this->removePublicationPicture($picture['crop'], $idpublication);
         // text
         $this->removePublicationText($idpublication);
         // movies
@@ -2952,7 +2956,7 @@ trait Gazet
             $pictures = $this->getPublicationPictures($publications[$i]);
             if (!empty($pictures)) {
                 for ($p = 0; $p < count($pictures); $p++) {
-                    $cover = $this->getPictureData($pictures[$p]['full_size'])['cover'];
+                    $cover = $this->getPictureData(["crop" => $pictures[$p]['crop']])['cover'];
                     if ($cover !== null && $cover !== $idobject) {
                         $newPicture = $cover;
                         break;
@@ -2972,9 +2976,9 @@ trait Gazet
         ]);
     }
 
-    private function removePublicationPicture(int $idfullsize, int $idpublication)
+    private function removePublicationPicture(int $idcrop, int $idpublication)
     {
-        $data = $this->getPictureData($idfullsize);
+        $data = $this->getPictureData(['crop' => $idcrop]);
         // TODO: edit to handle miniature too
         $gazettes = $this->getGazettesByCoverPicture($data['cover']);
         if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->replaceGazetteCover($gazette, $data['cover']);
@@ -2990,6 +2994,14 @@ trait Gazet
                 ]);
             }
         $this->reorderPublicationPictures($idpublication);
+        return true;
+    }
+
+    private function removePublicationPictures(int $idpublication)
+    {
+        $pictures = $this->getPublicationPictures($idpublication);
+        if (empty($pictures)) return true;
+        foreach ($pictures as $picture) $this->removePublicationPicture($picture['crop'], $idpublication);
         return true;
     }
 
@@ -3566,17 +3578,50 @@ trait Gazet
      */
     private function setPublicationPicture(int $idpublication, array $picture)
     {
-        $data = $this->getPictureData($picture['full_size']);
-        print('@@@ data: ' . print_r($data, true) . PHP_EOL);
-        print('@@@ picture: ' . print_r($picture, true) . PHP_EOL);
+        $data = !empty($picture['full_size']) ? $this->getPictureData(['full_size' => $picture['full_size']]) : [];
         if (empty($data)) {
+            $into = 'idpublication,place,title';
+            $value = '?,?,?';
+            $type = 'iis';
+            $content = [$idpublication, $picture['place'], $picture['title'] ?? ''];
+            if (!empty($picture['full_size'])) {
+                $into .= ',full_size';
+                $value .= ',?';
+                $type .= 'i';
+                $content[] = $picture['full_size'];
+            }
+            if (!empty($picture['cover'])) {
+                $into .= ',cover';
+                $value .= ',?';
+                $type .= 'i';
+                $content[] = $picture['cover'];
+            }
+            if (!empty($picture['crop'])) {
+                $into .= ',crop,width,height';
+                $value .= ',?,?,?';
+                $type .= 'iii';
+                $content = [...$content, $picture['crop'], $picture['width'], $picture['height']];
+            }
+            if (!empty($picture['mini'])) {
+                $into .= ',mini';
+                $value .= ',?';
+                $type .= 'i';
+                $content[] = $picture['mini'];
+            }
             $this->db->request([
-                'query' => 'INSERT INTO publication_has_picture (idpublication,full_size,cover,crop,mini,place,title) VALUES (?,?,?,?,?,?,?);',
-                'type' => 'iiiiiis',
-                'content' => [$idpublication, $picture['full_size'], $picture['cover'], $picture['crop'], $picture['mini'], $picture['place'], $picture['title'] ?? ''],
+                'query' => 'INSERT INTO publication_has_picture (' . $into . ') VALUES (' . $value . ');',
+                'type' => $type,
+                'content' => $content,
             ]);
             return true;
         }
+        if (($picture['place'] === null || $data['place'] === $picture['place']) &&
+            ($picture['title'] === null || $data['title'] === $picture['title']) &&
+            ($picture['full_size'] === null || $data['full_size'] === $picture['full_size']) &&
+            ($picture['cover'] === null || $data['cover'] === $picture['cover']) &&
+            ($picture['crop'] === null || $data['crop'] === $picture['crop']) &&
+            ($picture['mini'] === null || $data['mini'] === $picture['mini'])
+        ) return true;
         $set = [];
         $type = '';
         $content = [];
@@ -3586,9 +3631,9 @@ trait Gazet
             $content[] = $picture['cover'];
         }
         if ($picture['crop'] !== null && $picture['crop'] !== $data['crop']) {
-            $set[] = 'crop = ?';
-            $type .= 'i';
-            $content[] = $picture['crop'];
+            $set[] = 'crop = ?,width = ?,height = ?';
+            $type .= 'iii';
+            $content = [...$content, $picture['crop'], $picture['width'], $picture['height']];
         }
         if ($picture['mini'] !== null && $picture['mini'] !== $data['mini']) {
             $set[] = 'mini = ?';
@@ -3605,13 +3650,15 @@ trait Gazet
             $type .= 's';
             $content[] = $picture['title'];
         }
-        $set = implode(',', $set);
-        // update db
-        $this->db->request([
-            'query' => 'UPDATE publication_has_picture SET ' . $set . ' WHERE idpublication = ? AND full_size = ? LIMIT 1;',
-            'type' => $type . 'ii',
-            'content' => [...$content, $idpublication, $picture['full_size']],
-        ]);
+        if (!empty($set)) {
+            $set = implode(',', $set);
+            // update db
+            $this->db->request([
+                'query' => 'UPDATE publication_has_picture SET ' . $set . ' WHERE idpublication = ? AND full_size = ? LIMIT 1;',
+                'type' => $type . 'ii',
+                'content' => [...$content, $idpublication, $picture['full_size']],
+            ]);
+        }
         // foreach picture, check if different
         if ($data['crop'] !== null && $picture['crop'] !== null && $data['crop'] !== $picture['crop']) {
             $this->removeS3Object($data['crop']);
@@ -3937,7 +3984,7 @@ trait Gazet
                 $pictures = $this->getPublicationPictures($publications[$pub]['idpublication']);
                 if (!empty($pictures)) {
                     foreach ($pictures as $picture) {
-                        $cover_picture = $this->getPictureData($picture['full_size'])['cover'];
+                        $cover_picture = $this->getPictureData(['crop' => $picture['crop']])['cover'];
                         if ($cover_picture !== null) {
                             $this->db->request([
                                 'query' => 'UPDATE gazette SET cover_picture = ? WHERE idgazette = ?;',
@@ -4102,20 +4149,18 @@ trait Gazet
         }
         // images update
         if ($parameters['images'] !== null) {
-            $pictures = $this->getPublicationPictures($idpublication); // get publication images
             // if no images in parameters, remove all images
-            if (empty($parameters['images'])) foreach ($pictures as $picture) $this->removePublicationPicture($picture['full_size'], $idpublication);
+            if (empty($parameters['images'])) $this->removePublicationPictures($idpublication);
             // else apply modifications
             else {
                 $ids = [];
                 foreach ($parameters['images'] as $image) {
-                    $ids[] = $image['full_size'];
-                    // if ($image['crop'] != null)
+                    $ids[] = $image['crop'];
                     $this->setPublicationPicture($idpublication, $image);
                 }
-                foreach ($pictures as $picture) // remove images not in parameters
-                    if (!in_array($picture['full_size'], $ids, false))
-                        $this->removePublicationPicture($picture['full_size'], $idpublication);
+                foreach ($this->getPublicationPictures($idpublication) as $picture) // remove images not in parameters
+                    if (!in_array($picture['crop'], $ids, false))
+                        $this->removePublicationPicture($picture['crop'], $idpublication);
             }
         }
         // gazettes update
@@ -4930,6 +4975,22 @@ trait Gazet
             'content' => [$capitalize, $iduser],
         ]);
         return $capitalize;
+    }
+
+    private function userToggleFullSizeImages(int $iduser)
+    {
+        $fullSize = $this->db->request([
+            'query' => 'SELECT fullsizeimages FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
+            'array' => true,
+        ])[0][0] === 0 ? 1 : 0;
+        $this->db->request([
+            'query' => 'UPDATE user SET fullsizeimages = ? WHERE iduser = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$fullSize, $iduser],
+        ]);
+        return $fullSize;
     }
 
     private function userUpdateComment(int $iduser, int $idfamily, array $parameters)

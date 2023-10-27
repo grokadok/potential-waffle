@@ -77,10 +77,7 @@ trait Http
                     'f' => 1, // login approved
                     'families' => $this->userGetFamiliesData($iduser),
                     'gazetteTypes' => $this->getGazetteTypes(),
-                    // 'invitations' => $this->getUserInvitations($iduser),
                     'member' => $this->userIsMember($iduser),
-                    // 'recipient' => $this->userIsRecipient($iduser),
-                    // 'requests' => $this->getUserRequests($iduser),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'unseen' => $this->getUnseen($iduser),
                     'user' => ['id' => $iduser, 'new' => $this->userIsNew($iduser), ...$userData],
@@ -478,6 +475,16 @@ trait Http
             if ($f === 52) {
                 $responseContent = ['f' => 52, 'removed' => $this->userRemovesAccount($iduser)];
             }
+
+            /////////////////////////////////////////////////////
+            // TOGGLE FULL SIZE IMAGES (53)
+            /////////////////////////////////////////////////////
+
+            if ($f === 53) {
+                $responseContent = ['f' => 53, 'fullsize' => $this->userToggleFullSizeImages($iduser)];
+            }
+
+
 
 
 
