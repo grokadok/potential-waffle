@@ -484,6 +484,14 @@ trait Http
                 $responseContent = ['f' => 53, 'fullsize' => $this->userToggleFullSizeImages($iduser)];
             }
 
+            /////////////////////////////////////////////////////
+            // UPDATE GAZETTE COVER (54)
+            /////////////////////////////////////////////////////
+
+            if ($f === 54) {
+                $responseContent = ['f' => 54, 'updated' => $this->userUpdateCover($iduser, $post['i'], $post['g'], $post['c'], $post['s'])];
+            }
+
 
 
 
