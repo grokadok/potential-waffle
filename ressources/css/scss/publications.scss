@@ -173,12 +173,13 @@ footer {
     & .content {
         display: flex;
         flex-direction: column;
+        font-size: 46px;
         /* gap: 30px; */
     }
     & .title {
         margin: 5px 0;
         width: 100%;
-        font-size: 45px;
+        font-size: 46px;
     }
     & .comment-author {
         font-size: 45px;
@@ -363,7 +364,7 @@ footer {
 .notebook .text {
     padding-left: 520px;
     padding-top: 134px;
-    font-size: 46px;
+    font-size: 57px;
     line-height: 118px;
     & > span {
         display: block;
