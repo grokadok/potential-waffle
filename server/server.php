@@ -50,7 +50,7 @@ class FWServer
         $this->serv->set([
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
-            'worker_num' => 2, // Open 4 Worker Process
+            'worker_num' => 4, // Open 4 Worker Process
             'task_enable_coroutine' => true,
             'task_worker_num' => 2, // Open 2 Task Worker Process
             // 'open_cpu_affinity' => true,
