@@ -22,7 +22,6 @@ class Browserless
             $ch = curl_init();
             curl_setopt_array($ch, [
                 CURLOPT_URL => $this->blserver . '/pdf',
-                CURLOPT_PORT => $this->port,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_TIMEOUT => 30,
@@ -46,7 +45,11 @@ class Browserless
                     \n\t}
                 }",
                 CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json']
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    // 'CF-Access-Client-Id: ' . getenv('CF_ACCESS_CLIENT_ID'),
+                    // 'CF-Access-Client-Secret: ' . getenv('CF_ACCESS_CLIENT_SECRET'),
+                ]
             ]);
             $result = curl_exec($ch);
             curl_close($ch);

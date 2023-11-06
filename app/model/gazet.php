@@ -3892,23 +3892,18 @@ trait Gazet
     private function updateCover(int $idgazette, int $cover, int $full = null)
     {
         // get current gazette data
-        print('@@@ update cover ' . $idgazette . ' cover: ' . $cover . ' full: ' . $full . PHP_EOL);
         $data = $this->getGazetteData($idgazette);
-        print_r($data);
         $this->db->request([
             'query' => 'UPDATE gazette SET cover_picture = ?, cover_full = ? WHERE idgazette = ? LIMIT 1;',
             'type' => 'iii',
             'content' => [$cover, $full ?? $cover, $idgazette],
         ]);
         if (!empty($data['cover_picture']) && $data['cover_picture'] !== $cover && !$this->checkPicturePublicationLink($data['cover_picture'])) {
-            print('@@@ remove cover picture ' . $data['cover_picture'] . PHP_EOL);
             $this->removeS3Object($data['cover_picture']);
         }
         if (!empty($data['cover_full']) && $data['cover_full'] !== $full && !$this->checkPicturePublicationLink($data['cover_full'])) {
-            print('@@@ remove cover full picture ' . $data['cover_full'] . PHP_EOL);
             $this->removeS3Object($data['cover_full']);
         }
-        // update pdf
         $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
         return;
     }
