@@ -21,15 +21,15 @@ class Browserless
             $path = json_encode($this->path . '/' . $url);
             $ch = curl_init();
             curl_setopt_array($ch, [
-                CURLOPT_URL => $this->blserver . '/pdf',
+                CURLOPT_URL => $this->blserver . '/pdf?token=' . getenv('BROWSERLESS_TOKEN'),
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_TIMEOUT => 30,
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_POSTFIELDS => "{
-                    \"url\": $path,
-                    \n\t\"options\": {
+                    \"url\": $path,\n\t
+                    \"options\": {
                         \n\t\t\"landscape\": false,
                         \n\t\t\"format\": \"A4\",
                         \n\t\t\"preferCSSPageSize\": true,
