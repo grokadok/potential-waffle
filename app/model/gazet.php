@@ -1022,6 +1022,7 @@ trait Gazet
     private function generatePDF(int $idgazette)
     {
         try {
+            print('@@@ generate pdf start' . PHP_EOL);
             $memoryUsage = memory_get_usage(true);
             $memoryUsageMB = $memoryUsage / 1024 / 1024;
             $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
@@ -1033,10 +1034,8 @@ trait Gazet
             // get gazette data (cover, recipient, type)
             $data = $this->getGazetteData($idgazette);
             $data['idgazette'] = $idgazette;
-            print('@@@ generate pdf 1' . PHP_EOL);
             // get gazette recipient data (address, display name)
             $recipient = $this->getRecipientData($data['idrecipient']);
-            print('@@@ generate pdf 2' . PHP_EOL);
             $gazette = <<<HTML
             <!DOCTYPE html>
             <html>
@@ -1052,13 +1051,11 @@ trait Gazet
 
             // cover page
             $cover = $this->generateCover($data, $recipient);
-            print('@@@ generate pdf 3' . PHP_EOL);
             $gazette .= $cover;
 
             // get all gazette pages
             $pageCount = $this->getGazetteTypeData($data['type']);
             $pages = $this->getGazettePages($idgazette);
-            print('@@@ generate pdf 4' . PHP_EOL);
             // for each gazette page
             $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
             $formatter->setPattern('MMMM yyyy');
@@ -1066,9 +1063,6 @@ trait Gazet
             for ($i = 1; $i < $pageCount - 1; $i++) {
                 $gazette .= $this->generatePage($pages[$i] ?? [], $recipient, $dateString);
             }
-
-            print('@@@ generate pdf 5' . PHP_EOL);
-
             $gazette .= <<<HTML
                 </body>
             </html>
@@ -1080,9 +1074,10 @@ trait Gazet
             file_put_contents('./public/' . $filename, $gazette);
 
             // generate pdf from HTML file
+            print('@@@ generate pdf send data to browserless' . PHP_EOL);
             $pdf = $this->browserless->pdfFromUrl($filename);
+            print('@@@ generate pdf got response from browserless' . PHP_EOL);
             if (empty($pdf)) throw new Throwable('PDF is empty');
-            print('@@@ generate pdf 6' . PHP_EOL);
             // remove html file
             unlink('./public/' . $filename);
             // store in local storage
@@ -1090,12 +1085,9 @@ trait Gazet
             file_put_contents($file, $pdf);
             // store in s3
             $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
-            // $keys = $this->s3->put(['body' => base64_decode($pdf), 'extension' => 'pdf']);
             unset($pdf);
-            print('@@@ generate pdf 7' . PHP_EOL);
             // store pdf in db
             $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
-            print('@@@ generate pdf 8' . PHP_EOL);
             if (!empty($data['pdf'])) $this->removeS3Object($data['pdf']);
             // update gazette with pdf
             $this->db->request([
@@ -1103,7 +1095,7 @@ trait Gazet
                 'type' => 'ii',
                 'content' => [$idObject, $idgazette],
             ]);
-            print('@@@ generate pdf 9' . PHP_EOL);
+            print('@@@ generate pdf end' . PHP_EOL);
             $memoryUsage = memory_get_usage(true);
             $memoryUsageMB = $memoryUsage / 1024 / 1024;
             $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
@@ -1756,9 +1748,6 @@ trait Gazet
             'type' => 'i',
             'content' => [$parameters['full_size'] ?? $parameters['crop']],
         ]);
-        print('@@@ getPictureData start' . PHP_EOL);
-        print_r($data);
-        print('@@@ getPictureData end' . PHP_EOL);
         return empty($data) ? [] : $data[0];
     }
 
@@ -1922,20 +1911,6 @@ trait Gazet
             'content' => [$idrecipient],
         ])[0];
     }
-
-    /**
-     * Returns recipient's address id.
-     * @return int Address id
-     */
-    // private function getRecipientAddressId(int $idrecipient)
-    // {
-    //     return $this->db->request([
-    //         'query' => 'SELECT idaddress FROM recipient WHERE idrecipient = ? LIMIT 1;',
-    //         'type' => 'i',
-    //         'content' => [$idrecipient],
-    //         'array' => true,
-    //     ])[0][0];
-    // }
 
     /**
      * Returns recipient's avatar's idobject
@@ -3891,7 +3866,6 @@ trait Gazet
 
     private function updateCover(int $idgazette, int $cover, int $full = null)
     {
-        // get current gazette data
         $data = $this->getGazetteData($idgazette);
         $this->db->request([
             'query' => 'UPDATE gazette SET cover_picture = ?, cover_full = ? WHERE idgazette = ? LIMIT 1;',
@@ -5029,14 +5003,7 @@ trait Gazet
     {
         if (!$this->userIsReferent($iduser, $this->getGazetteRecipient($idgazette)) && !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
         $this->updateCover($idgazette, $idcover, $idfull);
-        // TODO: send notification to family members
-        // $members = $this->getFamilyMembers($idfamily, [$iduser]);
-        // if (!empty($members))
-        //     $this->sendData($members, [
-        //         'family' => $idfamily,
-        //         'gazette' => $idgazette,
-        //         'type' => xx,
-        //     ]);
+        // TODO: send notifications to family members at gazette generation start and finish
         return true;
     }
 

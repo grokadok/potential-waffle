@@ -245,12 +245,12 @@ footer {
         width: 1219px;
         /* Layouts */
         &._2a {
-            grid-template-columns: 1fr 1fr;
-            grid-template-areas: "a b";
-        }
-        &._2b {
             grid-template-rows: 1fr 1fr;
             grid-template-areas: "a" "b";
+        }
+        &._2b {
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas: "a b";
         }
         &._3a {
             grid-template-columns: 1fr 1fr;
