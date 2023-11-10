@@ -2886,9 +2886,6 @@ trait Gazet
             'type' => 'i',
             'content' => [$idpublication],
         ]);
-        // update gazettes
-        if ($gazettes) foreach ($gazettes as $idgazette) $this->updateGazette($idgazette);
-
         // send notifications
         $members = $this->getFamilyMembers($idfamily);
         $data = [
@@ -2897,6 +2894,9 @@ trait Gazet
             'type' => 2,
         ];
         $this->sendData($members, $data);
+
+        // update gazettes
+        if ($gazettes) foreach ($gazettes as $idgazette) $this->updateGazette($idgazette);
 
         return true;
     }
@@ -3485,8 +3485,6 @@ trait Gazet
                 'query' => 'INSERT INTO recipient_has_publication (idrecipient,idpublication) VALUES ' . $insert . ';',
             ]);
         }
-        // update gazette
-        $this->setGazettes($idfamily, $publication['created']);
         // send notifications
         $data = [
             'date' => $publication['created'],
@@ -3506,6 +3504,8 @@ trait Gazet
                 $data,
             );
         }
+        // update gazette
+        $this->setGazettes($idfamily, $publication['created']);
         return $publication['idpublication'];
     }
 
@@ -4155,9 +4155,6 @@ trait Gazet
                         $this->removePublicationPicture($picture['crop'], $idpublication);
             }
         }
-        // if publication in unprinted gazettes, update them
-        $gazettes = $this->getGazettesByPublication($idpublication, false);
-        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->updateGazette($gazette);
     }
 
     private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
@@ -5045,10 +5042,6 @@ trait Gazet
         $this->updatePublication($parameters['idpublication'], $parameters);
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($parameters['layout'])) $parameters['layout'] = ['identifier' => $parameters['layout']];
-        // if (!empty($parameters['images'])) foreach ($parameters['images'] as &$image) {
-        //     $image['idobject'] = $image['id'];
-        //     unset($image['id']);
-        // }
         // TODO: if publication private, don't send to other members the updates
         // TODO: handle publication update notification handling client side with new images
         if (!empty($members))
@@ -5057,6 +5050,9 @@ trait Gazet
                 'publication' => json_encode($parameters),
                 'type' => 18,
             ]);
+        // if publication in unprinted gazettes, update them
+        $gazettes = $this->getGazettesByPublication($parameters['idpublication'], false);
+        if (!empty($gazettes)) foreach ($gazettes as $gazette) $this->updateGazette($gazette);
         return $this->getPublicationData($parameters['idpublication'], $iduser);
     }
 

@@ -4,6 +4,7 @@ namespace bopdev;
 
 foreach ([
     __DIR__ . '/vendor/autoload.php',
+    // __DIR__ . '/vendor/easytransac/easytransac-sdk-php/sdk/EasyTransac/autoload.php',
     __DIR__ . '/app/model/functions.php',
     __DIR__ . '/app/model/dbrequest.php',
     __DIR__ . '/app/model/gazet.php',
@@ -23,6 +24,7 @@ use Swoole\WebSocket\Server;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
+use EasyTransac;
 use bopdev\DBRequest;
 use bopdev\Browserless;
 use bopdev\Messaging;
@@ -34,6 +36,7 @@ class FWServer
     use Http;
     use Gazet;
     // use Websocket;
+    // use EasyTransac;
     use Auth;
 
     private $appname;
@@ -321,6 +324,11 @@ class FWServer
         // print('s3 test result: ');
         // var_dump($test);
         // print(PHP_EOL);
+
+        // Easytransac
+        EasyTransac\Core\Services::getInstance()->provideAPIKey(getenv('EASYTRANSAC_API_KEY'));
+        EasyTransac\Core\Services::getInstance()->setRequestTimeout(30);
+        // EasyTransac\Core\Services::getInstance()->setDebug(true);
 
         // Using operation methods creates a command implicitly
         if ($this->db->test() === true) {

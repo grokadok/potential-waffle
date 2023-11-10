@@ -6,13 +6,13 @@ class Browserless
 {
     private $blserver;
     private $path;
-    private $port;
+    // private $port;
 
     public function __construct()
     {
         $this->blserver = getenv('BROWSERLESS_HOST');
         $this->path = getenv('SERVER_URL');
-        $this->port = intval(getenv('BROWSERLESS_PORT'));
+        // $this->port = intval(getenv('BROWSERLESS_PORT'));
     }
 
     public function pdfFromUrl(string $url)
