@@ -14,8 +14,8 @@ FROM phpswoole/swoole:php8.2
 # ENV CHROME_PATH=/usr/bin/chromium-browser
 RUN apt update && apt install -y libicu-dev && rm -rf /var/lib/apt/lists/* \
     && docker-php-ext-install mysqli \
-    && docker-php-ext-install intl \
-    && echo "memory_limit=256M" > /usr/local/etc/php/conf.d/memory-limit.ini
+    && docker-php-ext-install intl
+    # && echo "memory_limit=256M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
 WORKDIR /var/www/
 # ADD https://docs.aws.amazon.com/aws-sdk-php/v3/download/aws.zip ./

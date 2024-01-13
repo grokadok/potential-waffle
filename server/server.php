@@ -4,30 +4,28 @@ namespace bopdev;
 
 foreach ([
     __DIR__ . '/vendor/autoload.php',
-    // __DIR__ . '/vendor/easytransac/easytransac-sdk-php/sdk/EasyTransac/autoload.php',
     __DIR__ . '/app/model/functions.php',
     __DIR__ . '/app/model/dbrequest.php',
+    __DIR__ . '/app/model/payment.php',
     __DIR__ . '/app/model/gazet.php',
     __DIR__ . '/app/model/http.php',
     __DIR__ . '/app/model/websocket.php',
     __DIR__ . '/app/model/auth.php',
     __DIR__ . '/app/model/messaging.php',
     __DIR__ . '/app/model/s3.php',
-    __DIR__ . '/app/model/browserless.php',
-    // __DIR__ . '/app/model/dompdf.php',
-    // __DIR__ . '/app/model/chrome.php',
+    __DIR__ . '/app/model/pdf.php',
 ] as $value) require_once $value;
 if (getenv('ISLOCAL')) require_once __DIR__ . '/config/env.php';
 
 use Swoole\Coroutine;
-use Swoole\WebSocket\Server;
+// use Swoole\WebSocket\Server;
+use Swoole\Http\Server;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
-use Swoole\WebSocket\Frame;
-use EasyTransac;
 use bopdev\DBRequest;
-use bopdev\Browserless;
 use bopdev\Messaging;
+use bopdev\Payment;
+use bopdev\PdfGenerator;
 use bopdev\S3Client;
 use Throwable;
 
@@ -35,8 +33,6 @@ class FWServer
 {
     use Http;
     use Gazet;
-    // use Websocket;
-    // use EasyTransac;
     use Auth;
 
     private $appname;
@@ -44,9 +40,10 @@ class FWServer
 
     public function __construct(
         private $db = new DBRequest(),
-        private $browserless = new Browserless(),
+        private $pdf = new PdfGenerator(),
         private $s3 = new S3Client(),
         private $serv = new Server("0.0.0.0", 8080),
+        private $payment = new Payment(),
     ) {
         $this->appname = getenv('APP_NAME');
         $this->messaging = new Messaging($this->serv);
@@ -66,8 +63,8 @@ class FWServer
         $this->serv->on("Close", [$this, "onClose"]);
         $this->serv->on("Finish", [$this, "onFinish"]);
         $this->serv->on("ManagerStart", [$this, "onManagerStart"]);
-        $this->serv->on("Message", [$this, "onMessage"]); // on websocket message
-        $this->serv->on("Open", [$this, "onOpen"]);
+        // $this->serv->on("Message", [$this, "onMessage"]); // on websocket message
+        // $this->serv->on("Open", [$this, "onOpen"]);
         $this->serv->on('PipeMessage', [$this, 'onPipeMessage']); // on internal message
         $this->serv->on("Request", [$this, "onRequest"]);
         $this->serv->on("Start", [$this, "onStart"]);
@@ -109,38 +106,7 @@ class FWServer
         int $fd,
         int $reactorId
     ) {
-        // remove session from db then $fd from $this->table
         $user = $server->getClientInfo($fd);
-        // $session = $server->table->get($fd, "session");
-        // $iduser = $server->table->get($fd, "user");
-        // if ($session) {
-        //     echo "delete session: " . $session . PHP_EOL;
-        //     $this->db->request([
-        //         "query" => "DELETE FROM session WHERE idsession = ?",
-        //         "type" => "i",
-        //         "content" => [$session],
-        //     ]);
-        //     $this->serv->table->del($fd);
-
-        //     // CHAT related
-        //     // foreach ($this->chatUserLogout($iduser) as $chat) {
-        //     //     foreach ($chat["users"] as $chatUser) {
-        //     //         if ($chatUser["inchat"] === 1) {
-        //     //             $this->serv->push(
-        //     //                 $chatUser["fd"],
-        //     //                 json_encode([
-        //     //                     "f" => 19,
-        //     //                     "chat" => [
-        //     //                         "id" => $chat["id"],
-        //     //                         "participants" => $chat["list"],
-        //     //                     ],
-        //     //                 ])
-        //     //             );
-        //     //         }
-        //     //     }
-        //     // }
-        // }
-
         $closer = $reactorId < 0 ? "server" : "client";
         echo "{$closer} closed connection {$fd} from {$user["remote_ip"]}:{$user["remote_port"]}" .
             PHP_EOL;
@@ -153,79 +119,6 @@ class FWServer
     {
         echo "#### Manager started ####" . PHP_EOL;
         swoole_set_process_name("swoole_process_server_manager");
-    }
-    public function onMessage(
-        Server $server,
-        Frame $frame
-    ) {
-        // if (!$this->serv->table->exist($frame->fd)) {
-        //     echo "login request from socket {$frame->fd} on worker {$server->worker_id}" . PHP_EOL;
-        //     $data = json_decode(urldecode($frame->data), true);
-        //     $data["fd"] = $frame->fd;
-        //     $res = $this->login($data);
-        //     if ($res["status"] === 1) {
-        //         echo "login succeded for user {$res["user"]} at socket {$frame->fd} on session {$res["session"]}" .
-        //             PHP_EOL;
-        //         $this->serv->table->set($frame->fd, [
-        //             "session" => $res["session"],
-        //             "user" => $res["user"],
-        //         ]);
-        //         $server->push($frame->fd, json_encode($res["data"]));
-        //     } else {
-        //         echo "login failed for {$frame->fd}" . PHP_EOL;
-        //         $server->push($frame->fd, json_encode($res["data"]));
-        //         $server->disconnect(
-        //             $frame->fd,
-        //             1000,
-        //             "Login failed, sorry bro."
-        //         );
-        //     }
-        // } else {
-        //     $session = $server->table->get($frame->fd, "session");
-        //     $user = $server->table->get($frame->fd, "user");
-        //     echo "Request from u" .
-        //         $user .
-        //         ":s" .
-        //         $session .
-        //         " : " .
-        //         $frame->data .
-        //         PHP_EOL;
-        //     try {
-        //         $task = [
-        //             "fd" => $frame->fd,
-        //             "session" => $session,
-        //             "user" => $user,
-        //             ...json_decode($frame->data, true),
-        //         ];
-        //         $response = $this->wsTask($task);
-        //         unset($task['content'], $task['session'], $task['user'], $task['fd']);
-        //         if (!empty($response)) {
-        //             $message = json_encode([
-        //                 "response" => $response,
-        //                 ...$task,
-        //             ]);
-        //             $server->push($frame->fd, $message);
-        //         }
-        //     } catch (\Exception $e) {
-        //         echo "Exception reçue : " . $e->getMessage() . PHP_EOL;
-        //         $response = json_encode([
-        //             "response" => [
-        //                 "fail" => "Ta mère en string.",
-        //                 "error" => $e->getMessage(),
-        //             ],
-        //             ...$task,
-        //         ]);
-        //         $server->push($frame->fd, $response);
-        //     }
-        // }
-    }
-    public function onOpen(
-        Server $server,
-        Request $request
-    ) {
-        $user = $server->getClientInfo($request->fd);
-        echo "connection {$request->fd} open for {$user["remote_ip"]}:{$user["remote_port"]}" .
-            PHP_EOL;
     }
     public function onPipeMessage(Server $serv, int $srcWorkerId, array $message)
     {
@@ -251,6 +144,9 @@ class FWServer
         Request $request,
         Response $response
     ) {
+        print('### REQUEST' . PHP_EOL);
+        print_r($request->server);
+        print_r($request->header);
         $response->header("Server", "SeaServer");
         $open_basedir = __DIR__ . "/public";
         $server = $request->server;
@@ -286,14 +182,40 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
-                $jwt = $this->JWTVerify($request->header['authorization'], $this->appname);
-                if (!$jwt) {
-                    $response->status(401);
-                    return $response->end();
+                // TODO: handle easytransac webhook and filter by ips stored in env
+                if ($request_uri === "/easytransac") {
+                    if ($server["remote_addr"] === '192.168.65.1' && in_array($request->header['x-forwarded-for'], explode(',', getenv('EASYTRANSAC_IPS')))) {
+                        // if (in_array($server["remote_addr"], getenv('EASYTRANSAC_IPS'))) {
+                        // $this->payment->easytransacWebhook($request->getContent());
+                        $this->serv->task([
+                            'body' => $request->getContent(),
+                            'task' => 'easytransacWebhook',
+                        ]);
+                        $response->status(200);
+                        return $response->end();
+                    }
                 }
-                $res = $this->task(
-                    [...json_decode($request->getContent(), true), ...(array)$jwt,]
-                );
+
+                if (isset($request->header['api-authorization']) && $request->header['api-authorization'] === getenv('SERVER_API_KEY')) {
+                    $post = json_decode($request->getContent(), true);
+                    print('### API REQUEST POST:' . PHP_EOL);
+                    print_r($post);
+                    $res = $this->api($post);
+                } else if (!isset($request->header['api-authorization'])) {
+                    $jwt = $this->JWTVerify($request->header['authorization'], $this->appname);
+                    if (!$jwt) {
+                        $response->status(401);
+                        return $response->end();
+                    } else {
+                        $res = $this->task(
+                            [
+                                ...json_decode($request->getContent(), true),
+                                ...(array)$jwt,
+                                'ip' => $server["remote_addr"],
+                            ]
+                        );
+                    }
+                }
                 // var_dump($res);
                 // $res = $this->task($request->post);
                 $response->header("Content-Type", $res["type"] ?? "");
@@ -325,25 +247,39 @@ class FWServer
         // var_dump($test);
         // print(PHP_EOL);
 
-        // Easytransac
-        EasyTransac\Core\Services::getInstance()->provideAPIKey(getenv('EASYTRANSAC_API_KEY'));
-        EasyTransac\Core\Services::getInstance()->setRequestTimeout(30);
-        // EasyTransac\Core\Services::getInstance()->setDebug(true);
+        // PDF server test
+        print(($this->pdf->request(0) ? '#### Pdf service connected. ####' : '!!!! Pdf service not connected. !!!!') . PHP_EOL);
 
-        // Using operation methods creates a command implicitly
+        // Payment test
+        // print('@@@@ Start test transaction @@@@' . PHP_EOL);
+        // $this->payment->testEasyTransac();
+        // print('@@@@ End test transaction @@@@' . PHP_EOL);
+        // print('@@@@ Start test refund @@@@' . PHP_EOL);
+        // $this->payment->refund([
+        //     'payment_service' => 1,
+        //     'name' => 'EOMB-BQRL-8PM2',
+        //     'reason' => 'test',
+        // ]);
+        // print('@@@@ End test refund @@@@' . PHP_EOL);
+        // print('@@@@ Start test status @@@@' . PHP_EOL);
+        // $this->payment->status([
+        //     'payment_service' => 1,
+        //     // 'request_id' => 'GrYZwg3bdjZA',
+        //     'transaction_id' => 'L21R-QXV9-YX5Q',
+        // ]);
+        // print('@@@@ End test status @@@@' . PHP_EOL);
+
         if ($this->db->test() === true) {
             print('#### Db connected. ####' . PHP_EOL);
             // if ($this->db->request(['query' => 'SELECT COUNT(iduser) FROM user;', 'array' => true])[0][0] === 0) $this->initDb();
+            $this->checkPendingGazettePDF();
         } else print('!!!! No db connection. !!!!' . PHP_EOL);
     }
 
     public function onTask($serv, $task)
-    // public function onTask($serv, $task_id, $srcWorkerId, $data)
     {
         try {
-            // echo "New AsyncTask[id={$task_id}] to worker[id={$srcWorkerId}]\n";
             print("New AsyncTask[id={$task->id}] to worker[id={$task->worker_id}]\n");
-            // var_dump($task);
             switch ($task->data['task']) {
                 case 'messaging':
                     $response = isset($task->data['body']) ?
@@ -364,17 +300,15 @@ class FWServer
                         ], $task->worker_id);
                     }
                     break;
-                case 'pdf':
-                    $this->generatePdf($task->data['idgazette']);
+                case 'easytransacWebhook':
+                    $this->handleEasyTransacWebhook($task->data['body']);
                     break;
             }
-            // $serv->finish("AsyncTask[id={$task_id}] -> OK");
-            $task->finish("AsyncTask -> OK");
+            $task->finish("AsyncTask[id={$task->id}] -> OK");
         } catch (Throwable $e) {
             print('### TASK ERROR' . PHP_EOL);
             print($e->getMessage());
-            // $serv->finish("AsyncTask[id={$task_id}] -> ERROR");
-            $task->finish("AsyncTask -> ERROR");
+            $task->finish("AsyncTask[id={$task->id}] -> ERROR");
         }
     }
 

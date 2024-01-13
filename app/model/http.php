@@ -11,11 +11,39 @@ trait Http
 {
     // use Auth;
     // use Gazet;
+
+    /**
+     * Communication from pdf server
+     */
+    private function api(array $post)
+    {
+        try {
+            $responseType = 'application/json';
+            $responseContent = [];
+            switch ($post['f']) {
+                case 1: // serve gazet data
+                    $responseContent = ['gazet' => $this->getGazettePDFData($post['id']),];
+                    break;
+                case 2:
+                    $this->gazetteGenerated($post);
+                    break;
+            }
+            return [
+                "type" => $responseType,
+                "content" => $responseContent,
+            ];
+        } catch (\Throwable $th) {
+            //throw $th;
+        }
+    }
+    /**
+     * Communication from client
+     */
     private function task($post)
     {
         // var_dump($post);
         // var_dump($post['f']);
-        // print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
+        print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
         try {
             $f = intval($post["f"]);
             $responseType = 'application/json';
@@ -492,9 +520,61 @@ trait Http
                 $responseContent = ['f' => 54, 'updated' => $this->userUpdateCover($iduser, $post['i'], $post['g'], $post['c'], $post['s'])];
             }
 
+            /////////////////////////////////////////////////////
+            // CANCEL SUBSCRIPTION (55)
+            /////////////////////////////////////////////////////
+
+            // TODO: finish coding CANCEL SUBSCRIPTION
+            if ($f === 55) {
+                $responseContent = ['f' => 55, 'canceled' => $this->userCancelSubscription($iduser, $post['i'], $post['s'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // START SUBSCRIPTION (56)
+            /////////////////////////////////////////////////////
+
+            if ($f === 56) {
+                $responseContent = ['f' => 56, 'link' => $this->userSetSubscription($iduser, $post['u'], $post['s'], $post['p'], $post['ip'])];
+                // recipient, subscription type, payment type
+            }
 
 
 
+
+
+
+
+            // /////////////////////////////////////////////////////
+            // // PROCESS PAYMENT (55)
+            // /////////////////////////////////////////////////////
+
+            // if ($f === 55) {
+            //     $responseContent = ['f' => 55, 'payment' => $this->userSetMemberPayment($iduser, $post['i'], $post['s'], $post['t'])];
+            // }
+
+            // /////////////////////////////////////////////////////
+            // // START SUBSCRIPTION (56)
+            // /////////////////////////////////////////////////////
+
+            // if ($f === 56) {
+            //     $responseContent = ['f' => 56, 'subscription' => $this->userSetSubscription($iduser, $post['recipient'], $post['type'])];
+            // }
+
+            // /////////////////////////////////////////////////////
+            // // PROCESS SUBSCRIPTION PAYMENT (57)
+            // /////////////////////////////////////////////////////
+
+            // if ($f === 57) {
+            //     $responseContent = ['f' => 57, 'payment' => $this->userSetSubscriptionPayment($iduser, $post['idsubscription'], $post['paymentService'], $post['idTransaction'])];
+            // }
+
+            // /////////////////////////////////////////////////////
+            // // PROCESS SUBSCRIPTION PAYMENT (57)
+            // /////////////////////////////////////////////////////
+
+            // if ($f === 57) {
+            //     $responseContent = ['f' => 57, 'payment' => $this->userSetSubscriptionPayment($iduser, $post['idsubscription'], $post['paymentService'], $post['idTransaction'])];
+            // }
 
 
 

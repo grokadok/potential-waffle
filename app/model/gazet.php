@@ -143,6 +143,48 @@ trait Gazet
         }
     }
 
+    private function checkPaymentService(int $idservice)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT enabled FROM payment_service WHERE idpayment_service = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idservice],
+            'array' => true,
+        ])[0][0]);
+    }
+
+    private function checkPaymentType(int $idtype)
+    {
+        $service = $this->db->request([
+            'query' => 'SELECT payment_service FROM payment_type WHERE idpayment_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idtype],
+            'array' => true,
+        ])[0][0];
+        if (!$this->checkPaymentService($service)) return false;
+        return !empty($this->db->request([
+            'query' => 'SELECT enabled FROM payment_type WHERE idpayment_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idtype],
+        ]));
+    }
+
+    private function checkPendingGazettePDF()
+    {
+        $gazettes = $this->db->request([
+            'query' => 'SELECT idgazette FROM gazette WHERE status > 0;',
+            'array' => true,
+        ]);
+        foreach ($gazettes as $gazette) {
+            $this->db->request([
+                'query' => 'UPDATE gazette SET status = 0 WHERE idgazette = ? LIMIT 1;',
+                'type' => 'i',
+                'content' => [$gazette[0]],
+            ]);
+            $this->requestGazetteGen($gazette[0]);
+        }
+    }
+
     private function checkPicturePublicationLink(int $idobject)
     {
         return !empty($this->db->request([
@@ -158,6 +200,15 @@ trait Gazet
             'query' => 'SELECT NULL FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $name],
+        ]));
+    }
+
+    private function checkSubscription(int $idsubscription)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM subscription WHERE idsubscription = ? AND cancel = 0;',
+            'type' => 'i',
+            'content' => [$idsubscription],
         ]));
     }
 
@@ -691,424 +742,45 @@ trait Gazet
         return true;
     }
 
-    private function generateCover(array $data, array $recipient)
+    private function gazetteGenerated(array $parameters)
     {
-        // date
-        $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
-        $formatter->setPattern('d MMMM');
-        $dateString = strtoupper($formatter->format(strtotime($data['print_date'])));
-        $year = substr($data['print_date'], 0, 4);
-        // address
-        $address = [strtoupper($recipient['address']['name']), strtoupper($recipient['address']['field1'])];
-        if (!empty($recipient['address']['field2'])) $address[] = strtoupper($recipient['address']['field2']);
-        if (!empty($recipient['address']['field3'])) $address[] = strtoupper($recipient['address']['field3']);
-        $address[] = $recipient['address']['postal'] . ' ' . strtoupper($recipient['address']['city']);
-        // TODO: country ? depending on how app handles other countries than France
-        $address = implode('<br>', $address);
-
-        // get cover img
-        $coverImg = !empty($data['cover_picture']) ?
-            $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($data['cover_picture'])) : '';
-
-        // get bottom page writers
-        $writers = $this->getCoverWriters($data['idgazette']);
-        $coverWriters = '';
-        $message = '';
-        if (!empty($writers)) {
-            $message = 'Nous avons des messages pour toi !';
-            $i = 0;
-            foreach ($writers as $writer) {
-                if ($i < 4) {
-                    // get user data
-                    $user = $this->getUserData($writer);
-                    $avatar = $user['avatar'] != null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($user['avatar'])) : 'img/user-solid.svg';
-                    $coverWriters .= <<<HTML
-                        <div class="people">
-                            <div class="people__pic-container">
-                                <div class="people__pic">
-                                    <img src="$avatar" alt="" />
-                                </div>
-                            </div>
-                            <div class="people__firstname">{$user['first_name']}</div>
-                            <div class="people__lastname">{$user['last_name']}</div>
-                        </div>
-                    HTML;
-                    $i++;
-                }
-            }
+        // get gazette status
+        $status = $this->db->request([
+            'query' => 'SELECT status FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$parameters['id']],
+            'array' => true,
+        ])[0][0];
+        if ($status === 1) {
+            $this->removeS3ObjectFromKey($parameters['key']);
+            return $this->pdf->request($parameters['id']);
         }
-        $cover = <<<HTML
-            <div class="cover">
-                <div class="content">
-                    <div class="top">
-                        <img
-                            class="logo"
-                            src="img/logo-cover.svg"
-                            alt="La Gazet\', La famille se lit et se relie !"
-                        />
-                        <div class="date-url">
-                            <div class="date-url__date">
-                                <div class="date-url__day-month">$dateString</div>
-                                <div class="date-url__year">$year</div>
-                            </div>
-                            <div class="date-url__url">www.la-gazet.com</div>
-                        </div>
-                    </div>
-                    <div class="middle">
-                        <!-- <div class="pic-ambient-text">
-                            <img height="208" src="assets/ambient-text.png" alt="" />
-                        </div> -->
-                        <div class="address">
-                            $address
-                        </div>
-                        <div class="pic-main">
-                            <img src="$coverImg" alt="" />
-                        </div>
-                        <div class="pic-text-bottom">
-                            $message
-                        </div>
-                        <div class="pic-logo-bottom">
-                            <img height="124" src="img/feather.svg" alt="" />
-                        </div>
-                    </div>
-                    <div class="bottom">
-                        $coverWriters
-                    </div>
-                </div>
-            </div>
-        HTML;
-        return $cover;
-    }
-
-    private function generateSinglePage(array $parameters)
-    {
-        $page = <<<HTML
-        <div class="page">
-            <div class="content">
-                <div class="publication landscape">
-                    <div class="pics l-3a">
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div class="desc">
-                        <div class="author">
-                            <div class="avatar"></div>
-                            <div class="fullname-date">
-                                <div>
-                                    <span class="firstname">Jean</span>
-                                    <span class="lastname">Guth</span>
-                                </div>
-                                <div>19 décembre 2022</div>
-                            </div>
-                        </div>
-                        <div class="content">
-                            <h1 class="title">Titre : Lorem Ipsum</h1>
-                            <span class="text">
-                                Lorem ipsum dolor sit amet consectetur
-                                adipisicing elit. Aliquam, animi molestias
-                                repudiandae laboriosam vel porro aliquid minima
-                                qui, facere voluptate.
-                            </span>
-                            <hr class="separator" />
-                            <div class="comment">
-                                <span class="comment-author">Amélie :</span>
-                                <span class="comment-text"
-                                    >Quaerat dolor magnam quiquia labore.</span
-                                >
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="publication portrait">
-                    <div class="pics p-3a">
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div class="desc">
-                        <div class="author">
-                            <div class="avatar"></div>
-                            <div class="fullname-date">
-                                <div class="fullname">
-                                    <span class="firstname">Amelie</span>
-                                    <span class="lastname">Niffer</span>
-                                </div>
-                                <div class="date">19 décembre 2022</div>
-                            </div>
-                        </div>
-                        <div class="content">
-                            <h1 class="title">Titre : Lorem Ipsum</h1>
-                            <span class="text">
-                                Lorem ipsum dolor sit amet consectetur
-                                adipisicing elit. Aliquam, animi molestias
-                                repudiandae laboriosam vel porro aliquid minima
-                                qui, facere voluptate.
-                            </span>
-                            <hr class="separator" />
-                            <div class="comment">
-                                <div class="comment-author">Jean</div>
-                                <span class="comment-text">
-                                    Ut consectetur quaerat ut dolor aliquam. Ut
-                                    est amet modi adipisci.
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <footer>
-                <img
-                    height="110"
-                    src="img/logo.svg"
-                    alt="logo de l'application"
-                />
-                <span>Pour Astrid - Décembre 2022</span>
-            </footer>
-        </div>
-        HTML;
-        return $page;
-    }
-
-    private function generatePage(array $parameters, array $recipient, string $gazetDate)
-    {
-        $page = <<<HTML
-        <div class="page">
-            <div class="content">
-        HTML;
-        if (!empty($parameters)) {
-            foreach ($parameters as $place) {
-                // get content (publication,game,song...)
-                if ($place['idpublication'] !== null) {
-                    // get publication data
-                    $publication = $this->getPublicationData($place['idpublication']);
-                    // print('@@@ generate page publication start' . PHP_EOL);
-                    // var_dump($publication);
-                    // print('@@@ generate page publication end' . PHP_EOL);
-
-                    // parse publication date
-                    $date = new DateTime($publication['created']);
-                    $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
-                    $dateString = $formatter->format($date);
-                    // get author data
-                    $author = $this->getUserData($publication['author']);
-                    $avatar = $author['avatar'] !== null ? $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($author['avatar'])) : 'img/user-solid.svg';
-                    // parse text
-                    $text = str_replace("\n", '<br>', $publication['text']);
-
-                    // parse publication layout
-                    // full / half page
-                    $size = $publication['layout']['identifier'][0] === 'f' ? 'full' : 'half';
-                    // publication type
-                    switch ($publication['layout']['identifier'][1]) {
-                        case 'j':
-                            // if journal
-                            $type = 'notebook';
-                            $picture = '';
-                            if (!empty($publication['images'])) {
-                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($publication['images'][0]['crop']));
-                                $picture = <<<HTML
-                                <div class="pic__frame">
-                                    <div class="pic__pic">
-                                        <img
-                                            src="$url"
-                                            height="470"
-                                            width="470"
-                                            alt="photo"
-                                        />
-                                    </div>
-                                    <img
-                                        width="630"
-                                        height="650"
-                                        src="img/picture-frame.svg"
-                                        alt="cadre de la photo"
-                                    />
-                                </div>
-                                HTML;
-                            }
-                            // replace \n by <br>
-                            $page .= <<<HTML
-                            <div class="$type $size">
-                                <div class="container">
-                                    <div class="text">
-                                        <span>Le $dateString</span>
-                                        $text
-                                    </div>
-                                </div>
-                                $picture
-                            </div>
-                            HTML;
-                            break;
-                        case 'p':
-                            // if publication
-                            $type = 'publication';
-                            $orientation = $publication['layout']['orientation'] === 1 ? 'landscape' : 'portrait';
-                            $nameNewLine = $orientation === 'portrait' ? '<br>' : '';
-                            $pictureLayout = '_' . $publication['layout']['identifier'][3] . $publication['layout']['identifier'][4];
-                            // pictures
-                            $pictures = '';
-                            foreach ($publication['images'] as $image) {
-                                $url = $this->s3->presignedUriGet($this->getS3ObjectKeyFromId($image['crop']));
-                                $pictures .= <<<HTML
-                                <div>
-                                    <img src="$url" alt="">
-                                </div>
-                                HTML;
-                            }
-
-                            $page .= <<<HTML
-                            <div class="$type $size $orientation">
-                                <div class="pics $pictureLayout">
-                                    $pictures
-                                </div>
-                                <div class="desc">
-                                    <div class="author">
-                                        <div class="avatar">
-                                            <img src="$avatar" alt="" />
-                                        </div>
-                                        <div class="fullname-date">
-                                            <div>
-                                                <span class="firstname">{$author['first_name']}</span>
-                                                $nameNewLine
-                                                <span class="lastname">{$author['last_name']}</span>
-                                            </div>
-                                            <div>$dateString</div>
-                                        </div>
-                                    </div>
-                                    <div class="content">
-                                        <h1 class="title">{$publication['title']}</h1>
-                                        <span class="text">
-                                            $text
-                                        </span>
-                                        <!-- <hr class="separator" />
-                                        <div class="comment">
-                                            <span class="comment-author">Amélie :</span>
-                                            <span class="comment-text"
-                                                >Quaerat dolor magnam quiquia labore.</span
-                                            >
-                                        </div> -->
-                                    </div>
-                                </div>
-                            </div>
-                            HTML;
-                            break;
-                    }
-                } else if ($place['idgame'] !== null) {
-                    // get game data
-                    // game is an image, get it
-                } else if ($place['idsong'] !== null) {
-                    // get song data
-                }
-            }
-        }
-        $page .= <<<HTML
-            </div>
-            <footer>
-                <img
-                    height="110"
-                    src="img/logo.svg"
-                    alt="logo de l\'application"
-                />
-                <span>Pour {$recipient['display_name']} - $gazetDate</span>
-            </footer>
-        </div>
-        HTML;
-        return $page;
-    }
-
-    /**
-     * Generates PDF from gazette and returns file
-     */
-    private function generatePDF(int $idgazette)
-    {
-        try {
-            print('@@@ generate pdf start' . PHP_EOL);
-            $memoryUsage = memory_get_usage(true);
-            $memoryUsageMB = $memoryUsage / 1024 / 1024;
-            $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
-            $color = "\033[38;5;{$colorCode}m";
-            $resetColor = "\033[0m";
-            echo "{$color}Memory usage: {$memoryUsageMB} MB{$resetColor}\n";
-            print('@@@ Init generate pdf' . PHP_EOL);
-            $serverPath = getenv('SERVER_URL');
-            // get gazette data (cover, recipient, type)
-            $data = $this->getGazetteData($idgazette);
-            $data['idgazette'] = $idgazette;
-            // get gazette recipient data (address, display name)
-            $recipient = $this->getRecipientData($data['idrecipient']);
-            $gazette = <<<HTML
-            <!DOCTYPE html>
-            <html>
-                <head>
-                    <meta charset="UTF-8" />
-                    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                    <link rel="stylesheet" type="text/css" href="css/style.css" />
-                    <title>La Gazet</title>
-                </head>
-                <body>
-            HTML;
-
-            // cover page
-            $cover = $this->generateCover($data, $recipient);
-            $gazette .= $cover;
-
-            // get all gazette pages
-            $pageCount = $this->getGazetteTypeData($data['type']);
-            $pages = $this->getGazettePages($idgazette);
-            // for each gazette page
-            $formatter = new IntlDateFormatter('fr_FR', IntlDateFormatter::LONG, IntlDateFormatter::NONE);
-            $formatter->setPattern('MMMM yyyy');
-            $dateString = ucfirst($formatter->format(strtotime($data['print_date'])));
-            for ($i = 1; $i < $pageCount - 1; $i++) {
-                $gazette .= $this->generatePage($pages[$i] ?? [], $recipient, $dateString);
-            }
-            $gazette .= <<<HTML
-                </body>
-            </html>
-            HTML;
-
-            // generate random file name
-            $filename = bin2hex(random_bytes(16)) . '.html';
-            // save $gazette string into html file
-            file_put_contents('./public/' . $filename, $gazette);
-
-            // generate pdf from HTML file
-            print('@@@ generate pdf send data to browserless' . PHP_EOL);
-            $pdf = $this->browserless->pdfFromUrl($filename);
-            print('@@@ generate pdf got response from browserless' . PHP_EOL);
-            if (empty($pdf)) throw new Throwable('PDF is empty');
-            // remove html file
-            unlink('./public/' . $filename);
-            // store in local storage
-            $file = './file.pdf';
-            file_put_contents($file, $pdf);
-            // store in s3
-            $keys = $this->s3->put(['body' => $pdf, 'extension' => 'pdf']);
-            unset($pdf);
-            // store pdf in db
-            $idObject = $this->setS3Object(['key' => $keys['key'], 'binKey' => $keys['binKey'], 'ext' => 'pdf', 'family' => $recipient['idfamily']]);
-            if (!empty($data['pdf'])) $this->removeS3Object($data['pdf']);
-            // update gazette with pdf
-            $this->db->request([
-                'query' => 'UPDATE gazette SET pdf = ? WHERE idgazette = ? LIMIT 1;',
-                'type' => 'ii',
-                'content' => [$idObject, $idgazette],
-            ]);
-            print('@@@ generate pdf end' . PHP_EOL);
-            $memoryUsage = memory_get_usage(true);
-            $memoryUsageMB = $memoryUsage / 1024 / 1024;
-            $colorCode = 21 + round(($memoryUsageMB / 256) * 155);
-            $color = "\033[38;5;{$colorCode}m";
-            $resetColor = "\033[0m";
-            echo "{$color}Memory usage: {$memoryUsageMB} MB{$resetColor}\n";
-            return true;
-        } catch (Throwable $e) {
-            print('@@@ generate pdf error' . PHP_EOL);
-            print($e->getMessage() . PHP_EOL);
-            print($e->getTraceAsString() . PHP_EOL);
-            return false;
-        }
+        // generate binKey from key
+        $binKey = hex2bin(explode('.', $parameters['key'])[0]);
+        $oldGazette = $this->db->request([
+            'query' => 'SELECT pdf FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$parameters['id']],
+            'array' => true,
+        ])[0][0] ?? false;
+        $newGazette = $this->setS3Object([
+            'binKey' => $binKey,
+            'ext' => 'pdf',
+            'family' => $parameters['family'],
+            'key' => $parameters['key'],
+        ]);
+        $this->db->request([
+            'query' => 'UPDATE gazette SET status = 0, pdf = ? WHERE idgazette = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$newGazette, $parameters['id']],
+        ]);
+        if ($oldGazette && $oldGazette !== $newGazette) $this->removeS3Object($oldGazette);
+        $this->sendData($this->getFamilyMembers($parameters['family']), [
+            'family' => $parameters['family'],
+            'gazette' => $parameters['id'],
+            'recipient' => $parameters['recipient'],
+            'type' => 20,
+        ]);
     }
 
     /**
@@ -1207,7 +879,7 @@ trait Gazet
     private function getCoverWriters($idgazette)
     {
         $writers = $this->db->request([
-            'query' => 'SELECT iduser FROM gazette_writer WHERE idgazette = ?;',
+            'query' => 'SELECT DISTINCT iduser FROM gazette_writer WHERE idgazette = ?;',
             'type' => 'i',
             'content' => [$idgazette],
             'array' => true,
@@ -1215,6 +887,24 @@ trait Gazet
         if (empty($writers)) return [];
         foreach ($writers as &$writer) $writer = $writer[0];
         return $writers;
+    }
+
+    private function getGazetteWriters($idgazette)
+    {
+        $result = [];
+        $writers = $this->db->request([
+            'query' => 'SELECT DISTINCT iduser FROM gazette_writer WHERE idgazette = ?;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ]);
+        if (empty($writers)) return [];
+        foreach ($writers as $writer) $result[$writer[0]] = $this->db->request([
+            'query' => 'SELECT iduser as id, first_name, last_name, avatar FROM user WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$writer[0]],
+        ])[0];
+        return $result;
     }
 
     /**
@@ -1469,46 +1159,6 @@ trait Gazet
         ]));
     }
 
-    /**
-     * Returns gazettes with given cover picture's id.
-     * @return int[]
-     */
-    private function getGazettesByCoverPicture(int $idobject)
-    {
-        $gazettes = $this->db->request([
-            'query' => 'SELECT idgazette FROM gazette WHERE cover_picture = ?;',
-            'type' => 'i',
-            'content' => [$idobject],
-            'array' => true,
-        ]);
-        if (empty($gazettes)) return [];
-        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
-        return $gazettes;
-    }
-
-    private function getGazettesByPublication(int $idpublication, bool $printed = null)
-    {
-        $gazettes = $this->db->request([
-            'query' => 'SELECT idgazette FROM gazette_page WHERE idpublication = ?;',
-            'type' => 'i',
-            'content' => [$idpublication],
-            'array' => true,
-        ]);
-        if (empty($gazettes)) return false;
-        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
-        if ($printed === null) return $gazettes;
-        $in = implode(',', $gazettes);
-        $gazettes = $this->db->request([
-            'query' => 'SELECT idgazette FROM gazette WHERE idgazette IN (' . $in . ') AND printed = ?;',
-            'type' => 'i',
-            'content' => [$printed ? 1 : 0],
-            'array' => true,
-        ]);
-        if (empty($gazettes)) return false;
-        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
-        return $gazettes;
-    }
-
     private function getGazetteData(int $idgazette)
     {
         return $this->db->request([
@@ -1574,17 +1224,11 @@ trait Gazet
             'type' => 'i',
             'content' => [$idgazette],
         ]) as $place) {
-            // if ($place['idrecipient'] === null)
             $pages[$place['page_num']][$place['place']] = [
                 'idpublication' => $place['idpublication'],
                 'idgame' => $place['idgame'],
                 'idsong' => $place['idsong']
             ];
-            // else $pages[$place['page_num']][$place['place']]['modification'][$place['idrecipient']] = [
-            //     'idpublication' => $place['idpublication'],
-            //     'idgame' => $place['idgame'],
-            //     'idsong' => $place['idsong']
-            // ];
         }
         return $pages;
     }
@@ -1607,6 +1251,32 @@ trait Gazet
             }
         }
         return $pages;
+    }
+
+    private function getGazettePDFData(int $idgazette)
+    {
+        $this->db->request([
+            'query' => 'UPDATE gazette SET status = 2 WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+        $data = [
+            'idgazette' => $idgazette,
+            'pages' => $this->getGazettePagesData($idgazette),
+            'writers' => $this->getGazetteWriters($idgazette),
+            ...$this->getGazetteData($idgazette),
+        ];
+        $data['type'] = $this->getGazetteTypeData($data['type']);
+        $data['recipient'] = $this->getRecipientData($data['idrecipient']);
+
+        // for each object, replace id with s3 key
+        $data['cover_picture'] = $data['cover_picture'] !== null ? $this->getS3ObjectKeyFromId($data['cover_picture']) : null;
+        foreach ($data['writers'] as &$writer) $writer['avatar'] = $writer['avatar'] !== null ? $this->getS3ObjectKeyFromId($writer['avatar']) : null;
+        foreach ($data['pages'] as &$page) foreach ($page as &$place)
+            if (!empty($place['publication']) && !empty($place['publication']['images']))
+                foreach ($place['publication']['images'] as &$image)
+                    $image['crop'] = $this->getS3ObjectKeyFromId($image['crop']);
+        return $data;
     }
 
     /**
@@ -1660,6 +1330,46 @@ trait Gazet
             'content' => [$idgazette],
             'array' => true,
         ])[0][0];
+    }
+
+    /**
+     * Returns gazettes with given cover picture's id.
+     * @return int[]
+     */
+    private function getGazettesByCoverPicture(int $idobject)
+    {
+        $gazettes = $this->db->request([
+            'query' => 'SELECT idgazette FROM gazette WHERE cover_picture = ?;',
+            'type' => 'i',
+            'content' => [$idobject],
+            'array' => true,
+        ]);
+        if (empty($gazettes)) return [];
+        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
+        return $gazettes;
+    }
+
+    private function getGazettesByPublication(int $idpublication, bool $printed = null)
+    {
+        $gazettes = $this->db->request([
+            'query' => 'SELECT idgazette FROM gazette_page WHERE idpublication = ?;',
+            'type' => 'i',
+            'content' => [$idpublication],
+            'array' => true,
+        ]);
+        if (empty($gazettes)) return false;
+        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
+        if ($printed === null) return $gazettes;
+        $in = implode(',', $gazettes);
+        $gazettes = $this->db->request([
+            'query' => 'SELECT idgazette FROM gazette WHERE idgazette IN (' . $in . ') AND printed = ?;',
+            'type' => 'i',
+            'content' => [$printed ? 1 : 0],
+            'array' => true,
+        ]);
+        if (empty($gazettes)) return false;
+        foreach ($gazettes as &$gazette) $gazette = $gazette[0];
+        return $gazettes;
     }
 
     /**
@@ -1723,6 +1433,52 @@ trait Gazet
             'content' => [$identifier],
             'array' => true,
         ])[0][0];
+    }
+
+    private function getPayment(int $idpayment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT iduser,idsubscription,payment_type,request_id,transaction_id,amount,status FROM payment WHERE idpayment = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idpayment],
+        ])[0] ?? false;
+    }
+
+    private function getPaymentFromRequest(string $requestid)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idpayment,iduser,idsubscription,payment_type,transaction_id,amount,status FROM payment WHERE requestid = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$requestid],
+        ])[0] ?? false;
+    }
+
+    private function getPaymentService(int $idPaymentService)
+    {
+        return $this->db->request([
+            'query' => 'SELECT enabled,name FROM payment_service WHERE idpayment_service = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idPaymentService],
+        ])[0];
+    }
+
+    private function getPaymentServiceUid($iduser, $idpaymentservice)
+    {
+        return $this->db->request([
+            'query' => 'SELECT uid FROM payment_service_account WHERE iduser = ? AND payment_service = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idpaymentservice],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    private function getPaymentType(int $idPaymentType)
+    {
+        return $this->db->request([
+            'query' => 'SELECT enabled,name,payment_service FROM payment_type WHERE idpayment_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idPaymentType],
+        ])[0];
     }
 
     /**
@@ -2223,6 +1979,45 @@ trait Gazet
     }
 
     /**
+     * Returns subscription's ID for given recipient, false if none.
+     * @param int $idrecipient
+     * @return int|false
+     */
+    private function getSubscription(int $idrecipient)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idsubscription FROM subscription WHERE idrecipient = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns current month payments for given subscription id.
+     * @param int $idsubscription
+     * @return array|false
+     */
+    private function getSubscriptionLastPayments(int $idsubscription)
+    {
+        if (date('d') < 26) {
+            // if current day is < 26, between 26th of last month and 25th of current month
+            $startday = date('Y-m-d', strtotime('26th of last month'));
+            $endday = date('Y-m-d', strtotime('25th of this month'));
+        } else {
+            // - if current day is >= 26, between 26th of current month and end of month
+            $startday = date('Y-m-d', strtotime('26th of this month'));
+            $endday = date('Y-m-d', strtotime('last day of this month'));
+        }
+        $payments = $this->db->request([
+            'query' => 'SELECT idpayment,transaction_id,payment_type,amount FROM payment WHERE idsubscription = ? AND status = 1 AND date >= ? AND date <= ?;',
+            'type' => 'iss',
+            'content' => [$idsubscription, $startday, $endday],
+        ]);
+        return empty($payments) ? false : $payments;
+    }
+
+    /**
      * Returns array of user's id of members participating in given subscription.
      * @return int[]|false
      */
@@ -2241,28 +2036,45 @@ trait Gazet
 
     private function getSubscriptionMembersShare(int $idsubscription)
     {
-        // get current month => use last_day(now()) in mysql
         $memberPayments = [];
-        // get members having recurring payment with end = null or > current month
+        $recurringUsers = [];
+        // get active recurring payments for given subscription
         $payments = $this->db->request([
-            'query' => 'SELECT amount FROM user_has_payment WHERE idsubscription = ? AND date > DATE_ADD(DATE(LAST_DAY(NOW() - INTERVAL 1 MONTH)), INTERVAL 1 DAY) AND date < DATE_ADD(LAST_DAY(NOW()), INTERVAL 1 DAY);',
+            'query' => 'SELECT iduser,amount FROM recurring_payment WHERE idsubscription = ?;',
+            'type' => 'i',
+            'content' => [$idsubscription],
+        ]);
+        if (!empty($payments)) {
+            foreach ($payments as $payment) {
+                $memberPayments[] = $payment['amount'];
+                $recurringUsers[] = $payment['iduser'];
+            }
+        }
+        $recurringUsers = empty($payments) ? '' : 'AND iduser NOT IN (' . implode(',', $recurringUsers) . ') ';
+        // get payments not from users having recurring payment for given subscription and current month
+        $payments = $this->db->request([
+            'query' => 'SELECT amount FROM payment WHERE idsubscription = ? ' . $recurringUsers . 'AND date > DATE_ADD(DATE(LAST_DAY(NOW() - INTERVAL 1 MONTH)), INTERVAL 1 DAY) AND date < DATE_ADD(LAST_DAY(NOW()), INTERVAL 1 DAY);',
             'type' => 'i',
             'content' => [$idsubscription],
             'array' => true,
         ]);
         if (!empty($payments))
             foreach ($payments as $payment) $memberPayments[] = $payment[0];
-        unset($payment);
-        // get members having payment with date in current month
-        $payments = $this->db->request([
-            'query' => 'SELECT amount FROM recurring_payment WHERE idsubscription = ?;',
-            'type' => 'i',
-            'content' => [$idsubscription],
-            'array' => true,
-        ]);
-        if (!empty($payments)) foreach ($payments as $payment) $memberPayments[] = $payment[0];
         if (empty($memberPayments)) return false;
         return array_sum($memberPayments);
+    }
+
+    /**
+     * Returns subscription's price in cents for given subscription type.
+     */
+    private function getSubscriptionPrice(int $idSubscriptionType)
+    {
+        return $this->db->request([
+            'query' => 'SELECT price FROM subscription_type WHERE idsubscription_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idSubscriptionType],
+            'array' => true,
+        ])[0][0];
     }
 
     /**
@@ -2603,6 +2415,54 @@ trait Gazet
         return $subscriptions;
     }
 
+    private function handleEasyTransacWebhook(string $string)
+    {
+        parse_str($string, $data);
+        // get transaction from db using requestid
+        // TODO: handle getpaymentfromrequest error
+        $transaction = $this->getPaymentFromRequest($data['RequestId']);
+        // if no transaction in db or status different from pending and is same as in db, return
+        if (!$transaction || $data['status'] != 1 && $data['status'] === $transaction['status']) return false;
+
+        // set status of transaction in db
+        switch ($data['Status']) {
+            case 'pending':
+                // $status = 1;
+                if ($transaction['status'] !== 1) {
+                    // print error
+                    print('### ERROR: Transaction ' . $transaction['idpayment'] . ' already pending but notification status is pending. ###');
+                }
+                break;
+            case 'captured':
+                if ($transaction['status'] === 2) {
+                    // print error
+                    print('### ERROR: Transaction ' . $transaction['idpayment'] . ' already captured but notification status is captured. ###' . PHP_EOL);
+                    print('### Start transaction data: ###' . PHP_EOL);
+                    var_dump($data);
+                    print('### END transaction data: ###' . PHP_EOL);
+                } else {
+                    // set db data (status, transactionid, date,user uid)
+                }
+                // notify user of payment success
+                break;
+            case 'failed':
+                $status = 3;
+                break;
+            case 'authorized':
+                // do nothing, pre authorized payments are not handled
+                break;
+            case 'refunded':
+                $status = 5;
+                break;
+        }
+    }
+
+    private function notifyGazetteGeneration($idgazette)
+    {
+        $members = $this->getFamilyMembers($this->getRecipientFamily($this->getGazetteRecipient($idgazette)));
+        $this->sendData($members, ['gazette' => $idgazette]);
+    }
+
     /**
      * Check if recipient has modifications for gazette
      * @param int $idgazette
@@ -2631,23 +2491,31 @@ trait Gazet
         ]));
     }
 
-    /**
-     * Removes address if not linked to any recipient.
-     */
-    // private function removeAddress(int $idaddress)
-    // {
-    //     if (!empty($this->db->request([
-    //         'query' => 'SELECT NULL FROM recipient WHERE idaddress = ? LIMIT 1;',
-    //         'type' => 'i',
-    //         'content' => [$idaddress],
-    //     ]))) return false;
-    //     $this->db->request([
-    //         'query' => 'DELETE FROM address WHERE idaddress = ? LIMIT 1;',
-    //         'type' => 'i',
-    //         'content' => [$idaddress],
-    //     ]);
-    //     return true;
-    // }
+    private function refundPayment(array $payment)
+    {
+        $service = $this->db->request([
+            'query' => 'SELECT payment_service FROM payment_type WHERE idpayment_type = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$payment['payment_type']],
+            'array' => true,
+        ])[0][0];
+        switch ($service) {
+            case 1: // easytransac
+                $response = $this->easytransac->refundPayment($payment['name']);
+                break;
+        }
+    }
+
+    private function refundSubscription(int $idsubscription)
+    {
+        $payments = $this->getSubscriptionLastPayments($idsubscription);
+        if (!$payments) return false;
+        // foreach payment, refund
+        foreach ($payments as $payment) {
+            $this->refundPayment($payment);
+        }
+        return true;
+    }
 
     /**
      * Removes a given comment.
@@ -2972,6 +2840,16 @@ trait Gazet
         return true;
     }
 
+    private function removeRecurringPayment(int $iduser, int $idsubscription)
+    {
+        // TODO: cancel reccuring payment on payment service
+        return $this->db->request([
+            'query' => 'DELETE FROM recurring_payment WHERE iduser = ? AND idsubsciption = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$iduser, $idsubscription],
+        ]);
+    }
+
     private function removeRecipient(int $idfamily, int $idrecipient)
     {
         $gazettes = $this->getRecipientGazettes($idrecipient);
@@ -3116,15 +2994,6 @@ trait Gazet
         return true;
     }
 
-    private function removeUserSubscription(int $iduser, int $idsubscription)
-    {
-        return $this->db->request([
-            'query' => 'DELETE FROM recurring_payment WHERE iduser = ? AND idsubsciption = ? LIMIT 1;',
-            'type' => 'ii',
-            'content' => [$iduser, $idsubscription],
-        ]);
-    }
-
     private function reorderPublicationPictures(int $idpublication)
     {
         $pictures = $this->db->request([
@@ -3188,6 +3057,28 @@ trait Gazet
             'type' => 'iii',
             'content' => [$cover['cover'], $cover['full_size'] ?? $cover['cover'], $idgazette],
         ]);
+    }
+
+    private function requestGazetteGen(int $idgazette)
+    {
+        print('requesting gazette gen ' . $idgazette . PHP_EOL);
+        // get gazette status
+        $status = $this->db->request([
+            'query' => 'SELECT status FROM gazette WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+            'array' => true,
+        ])[0][0];
+        if ($status === 1) return; // gazette already requested // TODO: uncomment when testing done
+        // set gazette status to requested
+        $this->db->request([
+            'query' => 'UPDATE gazette SET status = 1 WHERE idgazette = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idgazette],
+        ]);
+        if ($status === 2) return; // gazette already generating
+        // send request to pdf server
+        return $this->pdf->request($idgazette);
     }
 
     private function sendData(array $users, array $data = [])
@@ -3671,18 +3562,48 @@ trait Gazet
         return true;
     }
 
+    /**
+     * Sets or suggests user as referent for given recipient.
+     * @return int 1 if pending referent, 2 if referent
+     */
     private function setReferent(int $idfamily, int $idrecipient, int $idreferent)
     {
+        // if active subscription, set pending referent
+        if (!empty($this->getRecipientSubscription($idrecipient))) {
+            $this->db->request([
+                'query' => 'UPDATE recipient SET pending_referent = ? WHERE idrecipient = ? LIMIT 1;',
+                'type' => 'ii',
+                'content' => [$idreferent, $idrecipient],
+            ]);
+            $data = [
+                'date' => date('Y-m-d H:i:s'),
+                'family' => $idfamily,
+                'recipient' => $idrecipient,
+                'referent' => $idreferent,
+                'type' => 18,
+            ];
+            // send notification to new referent
+            $recipientName = $this->getRecipientDisplayName($idrecipient);
+            $this->sendNotification(
+                [$idreferent],
+                'Requête référent',
+                'On vous propose le rôle de référent pour ' . $recipientName . '.',
+                $data,
+            );
+            return 1;
+        }
+
+        // else set referent
         $oldReferent = $this->getRecipientReferent($idrecipient);
         $this->db->request([
-            'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient = ? LIMIT 1;',
+            'query' => 'UPDATE recipient SET referent = ?, pending_referent = NULL WHERE idrecipient = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idreferent, $idrecipient],
         ]);
         $data = [
             'date' => date('Y-m-d H:i:s'),
             'family' => $idfamily,
-            'recipients' => [$idrecipient],
+            'recipient' => $idrecipient,
             'referent' => $idreferent,
             'type' => 17,
         ];
@@ -3709,7 +3630,7 @@ trait Gazet
                 $data,
             );
 
-        return true;
+        return 2;
     }
 
     /**
@@ -3744,6 +3665,51 @@ trait Gazet
         return $idobject = $this->getS3ObjectIdFromKey($object['binKey']);
     }
 
+    /**
+     * Create recipient's subscription and returns payment link.
+     * @return int Subscription's ID.
+     */
+    private function setSubscription(int $iduser, int $idrecipient, int $idSubscriptionType, int $idPaymentType, string $ip)
+    {
+        $this->db->request([
+            'query' => 'INSERT INTO subscription (idrecipient, idsubscription_type) VALUES (?,?);',
+            'type' => 'ii',
+            'content' => [$idrecipient, $idSubscriptionType],
+        ]);
+        $idsubscription = $this->getSubscription($idrecipient);
+        // get amount
+        $amount = $this->getSubscriptionPrice($idSubscriptionType);
+        // get payment type
+        $paymentType = $this->getPaymentType($idPaymentType);
+        if (empty($paymentType['enabled'])) return false;
+        // get payment service
+        $paymentService = $this->getPaymentService($paymentType['payment_service']);
+        if (empty($paymentService['enabled'])) return false;
+        // get user payment service's uid if exists
+        $uid = $this->getPaymentServiceUid($iduser, $paymentType['payment_service']);
+        // get payment link
+        $payment = $this->payment->paymentPage([
+            'amount' => $amount,
+            'description' => 'Abonnement La Gazet',
+            'email' => $this->getUserEmail($iduser),
+            'name' => $this->getUserName($iduser),
+            'paymentType' => $paymentType['name'],
+            'paymentService' => $paymentType['payment_service'],
+            'reccuring' => true,
+            'uid' => $uid,
+            'client_ip' => $ip,
+        ]);
+        // store payment in db
+        $this->db->request([
+            'query' => 'INSERT INTO payment (iduser,idsubscription,payment_type,request_id,amount,status) VALUES (?,?,?,?,?,?);',
+            'type' => 'iiisii',
+            'content' => [$iduser, $idsubscription, $idPaymentType, $payment['request_id'], $amount, 0],
+            'array' => true,
+        ]);
+        // return payment link
+        return $payment['url'];
+    }
+
     private function setUnseenComment(array $users, int $idcomment)
     {
         $values = [];
@@ -3775,6 +3741,19 @@ trait Gazet
         $newObject = $this->s3->move($key);
         $newObject['owner'] = $iduser;
         return $this->setS3Object($newObject);
+    }
+
+    /**
+     * Returns true if subscription exists else false.
+     * @return bool
+     */
+    private function subscriptionExists(int $idsubscription)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM subscription WHERE idsubscription = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idsubscription],
+        ]));
     }
 
     private function testerProcess(int $iduser)
@@ -4061,9 +4040,8 @@ trait Gazet
             // TODO: notification to admin/referent if gazette overflows, and suggest to take a bigger gazette type
         }
 
-        // generate pdf
-        // $this->generatePdf($idgazette);
-        $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
+        $this->requestGazetteGen($idgazette);
+        // $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
     }
 
     /**
@@ -4358,7 +4336,7 @@ trait Gazet
     /**
      * If familyInvitation approved, finalizes it, else sets it accepted.
      */
-    private function userAcceptsInvitation($iduser, $idfamily)
+    private function userAcceptsInvitation(int $iduser, int $idfamily)
     {
         if (!$this->familyInvitationExist($iduser, $idfamily)) return false; // if invitation doesn't exist, false
         if ($this->userIsMemberOfFamily($iduser, $idfamily)) { // if already member, remove invitation
@@ -4390,7 +4368,7 @@ trait Gazet
     /**
      * If familyInvitation accepted, finalizes it, else sets it approved.
      */
-    private function userApprovesInvitation($iduser, $invitee, $idfamily)
+    private function userApprovesInvitation(int $iduser, int $invitee, int $idfamily)
     {
         if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
@@ -4402,6 +4380,32 @@ trait Gazet
                 'content' => [$idfamily, $invitee],
             ]);
         return true;
+    }
+
+    private function userCancelSubscription(int $iduser, int $idfamily, int $idsubscription)
+    {
+        // if user not referent of subscription's recipient nor family admin, return false
+        if (!$this->userIsReferent($iduser, $this->getSubscriptionRecipient($idsubscription)) && !$this->userIsAdminOfFamily($iduser, $this->getSubscriptionFamily($idsubscription))) return false;
+        // if subscription already cancelled, return 1
+        if (!$this->subscriptionExists($idsubscription)) return 1;
+
+        // if date > 25th of the month
+        if (date('d') > 25) {
+            // mark subscription for cancellation after next gazette is printed
+            $this->db->request([
+                'query' => 'UPDATE subscription SET cancel = 1 WHERE idsubscription = ? LIMIT 1;',
+                'type' => 'i',
+                'content' => [$idsubscription],
+            ]);
+            // return 2
+            return 2;
+        } else {
+            // else immediate cancellation
+            // refund referent and members
+            $this->refundSubscription($idsubscription);
+            // delete subscription
+            return 3;
+        }
     }
 
     private function userCanReadObject(int $iduser, int $idobject)
@@ -4932,6 +4936,33 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) && !$this->userIsReferent($iduser, $idrecipient)) return false;
         return $this->setReferent($idfamily, $idrecipient, $idreferent);
+    }
+
+    private function userSetSubscription(int $iduser, int $idrecipient, int $idSubscriptionType, int $idPaymentType, int $ip)
+    {
+        if (
+            !$this->userIsReferent($iduser, $idrecipient) ||
+            $this->checkSubscription($idrecipient) ||
+            !$this->checkPaymentType($idPaymentType)
+        ) return false;
+        return $this->setSubscription($iduser, $idrecipient, $idSubscriptionType, $idPaymentType, $ip);
+    }
+
+    private function userSetSubscriptionPayment(int $iduser, int $idsubscription, int $paymentservice, string $transaction)
+    {
+        // check transaction status
+        // check transaction amount
+        // if none, remove subscription
+        // else store transaction
+        // set subscription pending_payment to 0
+    }
+
+    private function checkTransaction()
+    {
+    }
+
+    private function setTransaction()
+    {
     }
 
     private function userToggleAutocorrect(int $iduser)

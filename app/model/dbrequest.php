@@ -36,30 +36,34 @@ class DBRequest
     }
     public function request($request)
     {
-        $result = [];
-        Coroutine::create(
-            function () use ($request, &$result) {
-                $mysqli = $this->pool->get();
-                $stmt = $mysqli->prepare($request["query"]);
-                if (
-                    isset($request["type"]) &&
-                    isset($request["content"])
-                ) {
-                    $stmt->bind_param(
-                        $request["type"],
-                        ...$request["content"]
-                    );
+        try {
+            $result = [];
+            Coroutine::create(
+                function () use ($request, &$result) {
+                    $mysqli = $this->pool->get();
+                    $stmt = $mysqli->prepare($request["query"]);
+                    if (
+                        isset($request["type"]) &&
+                        isset($request["content"])
+                    ) {
+                        $stmt->bind_param(
+                            $request["type"],
+                            ...$request["content"]
+                        );
+                    }
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    if (str_starts_with($request["query"], "SELECT")) {
+                        $mode = empty($request['array']) ? MYSQLI_ASSOC : MYSQLI_NUM;
+                        $result = $result->fetch_all($mode);
+                    }
+                    $this->pool->put($mysqli);
                 }
-                $stmt->execute();
-                $result = $stmt->get_result();
-                if (str_starts_with($request["query"], "SELECT")) {
-                    $mode = empty($request['array']) ? MYSQLI_ASSOC : MYSQLI_NUM;
-                    $result = $result->fetch_all($mode);
-                }
-                $this->pool->put($mysqli);
-            }
-        );
-        return $result;
+            );
+            return $result;
+        } catch (\Throwable $th) {
+            print('### DBRequest error, request: ' . $request["query"] . PHP_EOL);
+        }
     }
     public function test()
     {

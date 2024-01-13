@@ -55,10 +55,3 @@ services:
             PMA_CONTROLPASS: "devonly"
             PMA_HOST: "mysql"
             UPLOAD_LIMIT: "512M"
-
-    # browserless:
-    #     image: browserless/chrome:latest
-    #     container_name: browserless
-    #     restart: always
-    #     ports:
-    #         - 8083:3000

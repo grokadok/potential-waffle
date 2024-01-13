@@ -84,7 +84,6 @@ class S3Client
 
     public function deleteObject(string $key, string $bucket = null)
     {
-        // TODO: try function deleteObject
         try {
             return $this->client->deleteObject([
                 'Bucket' => $bucket ?? $this->bucket,
