@@ -37,6 +37,8 @@ class FWServer
 
     private $appname;
     private $messaging;
+    private $monthLimit;
+    private $printDate;
 
     public function __construct(
         private $db = new DBRequest(),
@@ -47,6 +49,8 @@ class FWServer
     ) {
         $this->appname = getenv('APP_NAME');
         $this->messaging = new Messaging($this->serv);
+        $this->monthLimit = (int)getenv('MONTH_LIMIT');
+        $this->printDate = (int)getenv('PRINT_DATE');
         $this->serv->set([
             "dispatch_mode" => 1, // not compatible with onClose, for stateless server
             // 'dispatch_mode' => 7, // not compatible with onClose, for stateless server
@@ -144,9 +148,9 @@ class FWServer
         Request $request,
         Response $response
     ) {
-        print('### REQUEST' . PHP_EOL);
-        print_r($request->server);
-        print_r($request->header);
+        // print('### REQUEST' . PHP_EOL);
+        // print_r($request->server);
+        // print_r($request->header);
         $response->header("Server", "SeaServer");
         $open_basedir = __DIR__ . "/public";
         $server = $request->server;
@@ -236,6 +240,8 @@ class FWServer
         echo "Swoole Service has started" . PHP_EOL;
         echo "master_pid: {$serv->master_pid}" . PHP_EOL;
         echo "manager_pid: {$serv->manager_pid}" . PHP_EOL;
+        echo "Month limit set to " . $this->monthLimit . PHP_EOL;
+        echo "Print date set to " . $this->printDate . PHP_EOL;
         echo "########" . PHP_EOL . PHP_EOL;
 
         // DB query BENCHMARK
@@ -248,7 +254,7 @@ class FWServer
         // print(PHP_EOL);
 
         // PDF server test
-        print(($this->pdf->request(0) ? '#### Pdf service connected. ####' : '!!!! Pdf service not connected. !!!!') . PHP_EOL);
+        echo $this->pdf->request(0) ? '#### Pdf service connected. ####' : '!!!! Pdf service not connected. !!!!' . PHP_EOL;
 
         // Payment test
         // print('@@@@ Start test transaction @@@@' . PHP_EOL);
@@ -270,16 +276,16 @@ class FWServer
         // print('@@@@ End test status @@@@' . PHP_EOL);
 
         if ($this->db->test() === true) {
-            print('#### Db connected. ####' . PHP_EOL);
+            echo '#### Db connected. ####' . PHP_EOL;
             // if ($this->db->request(['query' => 'SELECT COUNT(iduser) FROM user;', 'array' => true])[0][0] === 0) $this->initDb();
             $this->checkPendingGazettePDF();
-        } else print('!!!! No db connection. !!!!' . PHP_EOL);
+        } else echo '!!!! No db connection. !!!!' . PHP_EOL;
     }
 
     public function onTask($serv, $task)
     {
         try {
-            print("New AsyncTask[id={$task->id}] to worker[id={$task->worker_id}]\n");
+            echo "New AsyncTask[id={$task->id}] to worker[id={$task->worker_id}]\n";
             switch ($task->data['task']) {
                 case 'messaging':
                     $response = isset($task->data['body']) ?
@@ -306,8 +312,8 @@ class FWServer
             }
             $task->finish("AsyncTask[id={$task->id}] -> OK");
         } catch (Throwable $e) {
-            print('### TASK ERROR' . PHP_EOL);
-            print($e->getMessage());
+            echo '### TASK ERROR' . PHP_EOL;
+            echo $e->getMessage();
             $task->finish("AsyncTask[id={$task->id}] -> ERROR");
         }
     }

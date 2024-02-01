@@ -41,9 +41,10 @@ trait Http
      */
     private function task($post)
     {
-        // var_dump($post);
         // var_dump($post['f']);
-        print('### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
+        // print current time (hh:mm:ss)
+        print(date("H:i:s") . ' ### task: ' . $post['f'] . ' from ' . $post['email'] . PHP_EOL);
+        // var_dump($post);
         try {
             $f = intval($post["f"]);
             $responseType = 'application/json';
@@ -55,10 +56,6 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 1) {
-
-                // $responseType = 'application/json';
-                // $iduser = $this->getUserIdFromFirebase($post['sub']);
-
                 // if user doesn't exists in db
                 if (!$iduser) {
                     // if gmail address corresponds to existing user, link firebase user to it
@@ -106,6 +103,7 @@ trait Http
                     'families' => $this->userGetFamiliesData($iduser),
                     'gazetteTypes' => $this->getGazetteTypes(),
                     'member' => $this->userIsMember($iduser),
+                    'paymentTypes' => $this->getPaymentTypes(),
                     'subscriptionTypes' => $this->getSubscriptionTypes(),
                     'unseen' => $this->getUnseen($iduser),
                     'user' => ['id' => $iduser, 'new' => $this->userIsNew($iduser), ...$userData],
@@ -524,9 +522,8 @@ trait Http
             // CANCEL SUBSCRIPTION (55)
             /////////////////////////////////////////////////////
 
-            // TODO: finish coding CANCEL SUBSCRIPTION
             if ($f === 55) {
-                $responseContent = ['f' => 55, 'canceled' => $this->userCancelSubscription($iduser, $post['i'], $post['s'])];
+                $responseContent = ['f' => 55, 'canceled' => $this->userCancelSubscription($iduser, $post['i'], $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -534,47 +531,41 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 56) {
-                $responseContent = ['f' => 56, 'link' => $this->userSetSubscription($iduser, $post['u'], $post['s'], $post['p'], $post['ip'])];
+                $responseContent = ['f' => 56, 'payment' => $this->userSetSubscription($iduser, $post['r'], $post['s'], $post['p'], $post['ip'])];
                 // recipient, subscription type, payment type
             }
 
+            /////////////////////////////////////////////////////
+            // GET PAYMENT TYPES (57)
+            /////////////////////////////////////////////////////
 
+            if ($f === 57) {
+                $responseContent = ['f' => 57, 'paymentTypes' => $this->getPaymentTypes()];
+            }
 
+            /////////////////////////////////////////////////////
+            // CANCEL PAYMENT PROCESS (58)
+            /////////////////////////////////////////////////////
 
+            if ($f === 58) {
+                $responseContent = ['f' => 58, 'cancelled' => $this->userCancelPayment($iduser, $post['r'])];
+            }
 
+            /////////////////////////////////////////////////////
+            // CHECK PAYMENT SUCCESS (59)
+            /////////////////////////////////////////////////////
 
+            if ($f === 59) {
+                $responseContent = ['f' => 59, 'payment' => $this->userUpdatePayment($iduser, $post['t'], $post['s'])];
+            }
 
-            // /////////////////////////////////////////////////////
-            // // PROCESS PAYMENT (55)
-            // /////////////////////////////////////////////////////
+            /////////////////////////////////////////////////////
+            // CANCEL MONTHLY PAYMENT (60)
+            /////////////////////////////////////////////////////
 
-            // if ($f === 55) {
-            //     $responseContent = ['f' => 55, 'payment' => $this->userSetMemberPayment($iduser, $post['i'], $post['s'], $post['t'])];
-            // }
-
-            // /////////////////////////////////////////////////////
-            // // START SUBSCRIPTION (56)
-            // /////////////////////////////////////////////////////
-
-            // if ($f === 56) {
-            //     $responseContent = ['f' => 56, 'subscription' => $this->userSetSubscription($iduser, $post['recipient'], $post['type'])];
-            // }
-
-            // /////////////////////////////////////////////////////
-            // // PROCESS SUBSCRIPTION PAYMENT (57)
-            // /////////////////////////////////////////////////////
-
-            // if ($f === 57) {
-            //     $responseContent = ['f' => 57, 'payment' => $this->userSetSubscriptionPayment($iduser, $post['idsubscription'], $post['paymentService'], $post['idTransaction'])];
-            // }
-
-            // /////////////////////////////////////////////////////
-            // // PROCESS SUBSCRIPTION PAYMENT (57)
-            // /////////////////////////////////////////////////////
-
-            // if ($f === 57) {
-            //     $responseContent = ['f' => 57, 'payment' => $this->userSetSubscriptionPayment($iduser, $post['idsubscription'], $post['paymentService'], $post['idTransaction'])];
-            // }
+            if ($f === 60) {
+                $responseContent = ['f' => 60, 'cancelled' => $this->userCancelMonthlyPayment($iduser, $post['r'], $post['s'])];
+            }
 
 
 
