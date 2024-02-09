@@ -64,6 +64,7 @@ trait Gazet
     {
         // refund active month payment if any
         $payment = $this->getMonthlyLastPayment($data['idmonthly_payment']);
+        echo '### Last payment found: ' . print_r($payment, true) . PHP_EOL;
         if (!empty($payment) && $payment['status'] === 2) $this->refundPayment($payment);
         $paymentType = !$payment ? $this->db->request([
             'query' => 'SELECT idpayment_type FROM payment WHERE idmonthly_payment = ? LIMIT 1;',
@@ -72,9 +73,9 @@ trait Gazet
             'array' => true,
         ])[0][0] : $payment['idpayment_type'];
         // cancel recurring payment
-        if (!$this->payment->cancel([
+        if (!$this->payment->cancelSubscription([
             'service' => $this->getPaymentServiceFromType($paymentType),
-            'transaction_id' => $data['original_Tid'],
+            'transaction_id' => $this->getTidFromPayment($data['original_payment']),
         ])) return false;
         // remove member from subscription
         $this->db->request([
@@ -87,19 +88,40 @@ trait Gazet
 
     private function cancelPayment(array $data)
     {
-        if (!$this->payment->cancelPage([
+        $this->payment->cancelPage([
             'service' => $this->getPaymentServiceFromType($data['idpayment_type']),
             'request_id' => $data['request_id'],
-        ])) return false;
-        $payment = $this->getPaymentData($data['idpayment']);
+        ]);
         // if pending subscription, remove it
-        if ($this->checkPendingSubscription($payment['idsubscription'])) $this->removeSubscription($payment['idsubscription']);
+        if ($this->checkPendingSubscription($data['idsubscription'])) {
+            $recipient = $this->getSubscriptionRecipient($data['idsubscription']);
+            $referent = $this->getReferent($recipient);
+            if ($data['iduser'] === $referent) {
+                $family = $this->getRecipientFamily($recipient);
+                $this->removeSubscription($data['idsubscription']);
+                // notify members
+                $members = $this->getFamilyMembers($family, [$referent]);
+                $this->sendData(
+                    $members,
+                    [
+                        'recipient' => $recipient,
+                        'family' => $family,
+                        'type' => 21,
+                    ]
+                );
+            }
+        }
         $this->db->request([
             'query' => 'DELETE FROM payment WHERE idpayment = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$data['idpayment']],
         ]);
-        return true;
+        echo '### Payment canceled.' . PHP_EOL;
+        return [
+            'subscription' => $data['idsubscription'],
+            'recipient' => $recipient ?? null,
+            'family' => $family ?? null,
+        ];
     }
 
     /**
@@ -120,12 +142,15 @@ trait Gazet
                 $this->cancelMonthlyPayment($monthly);
 
         // then refund remaining non-recurring payment for current month
-        // then set subscription status to cancelled
-        $this->db->request([
-            'query' => 'UPDATE subscription SET status = 4 WHERE idsubscription = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idsubscription],
-        ]);
+        $payments = $this->getSubscriptionLastPayments($idsubscription);
+        if (!empty($payments))
+            foreach ($payments as $payment)
+                if ($payment['status'] === 2 && empty($payment['idmonthly_payment']))
+                    $this->refundPayment($payment);
+
+        // then set subscription status to canceled
+        $this->updateSubscription($idsubscription, 4);
+        return true;
     }
 
     /**
@@ -254,6 +279,15 @@ trait Gazet
             'query' => 'SELECT NULL FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $name],
+        ]));
+    }
+
+    private function checkSubscriptionActive(int $idsubscription)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM subscription WHERE idsubscription = ? AND status = 2 LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idsubscription],
         ]));
     }
 
@@ -1141,7 +1175,8 @@ trait Gazet
     {
         if (!$this->familyHasRecipients($idfamily)) return [];
         $recipients = [];
-        foreach ($this->getFamilyRecipients($idfamily) as $recipient) $recipients[$recipient] = $this->getRecipientData($recipient);
+        foreach ($this->getFamilyRecipients($idfamily) as $recipient)
+            $recipients[$recipient] = $this->getRecipientData($recipient);
         return $recipients;
     }
 
@@ -1493,18 +1528,40 @@ trait Gazet
     {
         if (date('d') <= $this->monthLimit) {
             // if current day is <= month limit
-            $startday = date('Y-m-d', strtotime(($this->monthLimit + 1) . 'th of last month'));
-            $endday = date('Y-m-d', strtotime($this->monthLimit . 'th of this month'));
+            $startday = (new DateTime())
+                ->modify('first day of last month')
+                ->modify('+' . ($this->monthLimit) . ' day')
+                ->format('Y-m-d');
+
+            $endday = (new DateTime())
+                ->modify('first day of this month')
+                ->modify('+' . ($this->monthLimit - 1) . ' day')
+                ->format('Y-m-d');
         } else {
             // if current day is > month limit
-            $startday = date('Y-m-d', strtotime(($this->monthLimit + 1) . 'th of this month'));
-            $endday = date('Y-m-d', strtotime('last day of this month'));
+            $startday = (new DateTime())
+                ->modify('first day of this month')
+                ->modify('+' . ($this->monthLimit) . ' day')
+                ->format('Y-m-d');
+
+            $endday = (new DateTime())
+                ->modify('last day of this month')
+                ->format('Y-m-d');
         }
         return $this->db->request([
-            'query' => 'SELECT idpayment,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idmonthly_payment = ? AND date >= ? AND date <= ? LIMIT 1;',
+            'query' => 'SELECT idpayment,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idmonthly_payment = ? AND updated >= ? AND updated <= ? LIMIT 1;',
             'type' => 'iss',
             'content' => [$idmonthlypayment, $startday, $endday],
         ])[0] ?? false;
+    }
+
+    private function getMonthlyPayment(int $idmonthlypayment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT iduser,idsubscription,original_payment FROM monthly_payment WHERE idmonthly_payment = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idmonthlypayment],
+        ])[0];
     }
 
     private function getMonthlyPayments(int $idsubscription, int $iduser = null)
@@ -1518,39 +1575,11 @@ trait Gazet
             $content[] = $iduser;
         }
         return $this->db->request([
-            'query' => 'SELECT idmonthly_payment,iduser,original_Tid FROM monthly_payment WHERE ' . $where . ';',
+            'query' => 'SELECT idmonthly_payment,iduser,original_payment FROM monthly_payment WHERE ' . $where . ';',
             'type' => $type,
             'content' => $content,
         ]) ?? false;
     }
-
-    // /**
-    //  * Returns monthly payment's last occurrence's payment id.
-    //  * @return int
-    //  */
-    // private function getMonthlyFirstPayment(int $idMonthlyPayment)
-    // {
-    //     $this->db->request([
-    //         'query' => 'SELECT idpayment FROM payment WHERE idmonthly_payment = ? ORDER BY created ASC LIMIT 1;',
-    //         'type' => 'i',
-    //         'content' => [$idMonthlyPayment],
-    //         'array' => true,
-    //     ])[0][0];
-    // }
-
-    // /**
-    //  * Returns monthly payment's last occurrence's payment id.
-    //  * @return int
-    //  */
-    // private function getMonthlyLastPayment(int $idMonthlyPayment)
-    // {
-    //     $this->db->request([
-    //         'query' => 'SELECT idpayment FROM payment WHERE idmonthly_payment = ? ORDER BY created DESC LIMIT 1;',
-    //         'type' => 'i',
-    //         'content' => [$idMonthlyPayment],
-    //         'array' => true,
-    //     ])[0][0];
-    // }
 
     private function getPaymentAmount(int $idpayment)
     {
@@ -1602,6 +1631,15 @@ trait Gazet
         return empty($payment) ? false : $payment;
     }
 
+    private function getPaymentFromTid(string $tid)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idpayment,iduser,idsubscription,idpayment_type,idmonthly_payment,request_id,transaction_id,amount,refund,status FROM payment WHERE transaction_id = ? LIMIT 1;',
+            'type' => 's',
+            'content' => [$tid],
+        ])[0] ?? false;
+    }
+
     private function getPaymentService(int $idPaymentService)
     {
         return $this->db->request([
@@ -1625,14 +1663,18 @@ trait Gazet
         ])[0][0];
     }
 
+    /**
+     * Returns payment service uid for a given user and payment service.
+     * @return int|false
+     */
     private function getPaymentServiceUid(int $iduser, int $idpaymentservice)
     {
         return $this->db->request([
-            'query' => 'SELECT uid FROM payment_service_account WHERE iduser = ? AND idpayment_service = ? LIMIT 1;',
+            'query' => 'SELECT uid FROM payment_service_uid WHERE iduser = ? AND idpayment_service = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$iduser, $idpaymentservice],
             'array' => true,
-        ])[0][0] ?? false;
+        ])[0][0] ?? null;
     }
 
     private function getPaymentType(int $idPaymentType)
@@ -2186,6 +2228,20 @@ trait Gazet
     }
 
     /**
+     * Returns subscription ID if recipient has active subscription else false.
+     * @return bool
+     */
+    private function getSubscription(int $idrecipient)
+    {
+        return $this->db->request([
+            'query' => 'SELECT idsubscription FROM subscription WHERE idrecipient = ? AND status = 2 LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idrecipient],
+            'array' => true,
+        ])[0][0] ?? false;
+    }
+
+    /**
      * Returns subscription data for given subscription id.
      * @param int $idsubscription
      * @return array|false
@@ -2309,6 +2365,16 @@ trait Gazet
         return $this->db->request([
             'query' => 'SELECT idsubscription_type,name,price FROM subscription_type;',
         ]);
+    }
+
+    private function getTidFromPayment(int $idpayment)
+    {
+        return $this->db->request([
+            'query' => 'SELECT transaction_id FROM payment WHERE idpayment = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idpayment],
+            'array' => true,
+        ])[0][0] ?? false;
     }
 
     private function getUnseen(int $iduser)
@@ -2676,8 +2742,7 @@ trait Gazet
                 break;
             case 3: // failed
                 echo '### Payment failed ###' . PHP_EOL;
-                // cancel page, remove payment, remove subscription if no other payments
-                $this->setPaymentFailed($data);
+                // TODO: handle failed payment from easytransac push notifications
                 break;
             case 4:
                 echo '### Payment authorized ###' . PHP_EOL;
@@ -2686,7 +2751,6 @@ trait Gazet
             case 5: // refunded
                 echo '### Payment refunded ###' . PHP_EOL;
                 // TODO: handle refund from easytransac push notifications
-                $this->setPaymentRefund($data);
                 break;
         }
     }
@@ -2727,6 +2791,7 @@ trait Gazet
 
     private function refundPayment(array $data, int $amount = null)
     {
+        echo '### Refunding payment ###' . PHP_EOL;
         $refund = empty($amount) ? $data['amount'] : $data['refund'] + $amount;
         $payload = [
             'service' => $this->getPaymentServiceFromType($data['idpayment_type']),
@@ -2739,11 +2804,11 @@ trait Gazet
             else $payload['amount'] = $amount;
         }
         if (!$this->payment->refund($payload)) return false;
-        $status = $refund === $data['amount'] ? 'SET status = 5 ' : '';
+        $status = $refund === $data['amount'] ? ',status = 5' : '';
         $this->db->request([
-            'query' => 'UPDATE payment SET refund = ? ' . $status . 'WHERE idpayment = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$refund],
+            'query' => 'UPDATE payment SET refund = ?' . $status . ' WHERE idpayment = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$refund, $data['idpayment']],
         ]);
         return true;
     }
@@ -3071,16 +3136,6 @@ trait Gazet
         return true;
     }
 
-    // private function removeUserSubscription(int $iduser, int $idsubscription)
-    // {
-    //     // TODO: cancel reccuring payment on payment service
-    //     return $this->db->request([
-    //         'query' => 'DELETE FROM monthly_payment WHERE iduser = ? AND idsubsciption = ? LIMIT 1;',
-    //         'type' => 'ii',
-    //         'content' => [$iduser, $idsubscription],
-    //     ]);
-    // }
-
     private function removeRecipient(int $idfamily, int $idrecipient)
     {
         $gazettes = $this->getRecipientGazettes($idrecipient);
@@ -3148,6 +3203,7 @@ trait Gazet
             'type' => 'i',
             'content' => [$idsubscription],
         ]);
+        echo '### Subscription ' . $idsubscription . ' removed.' . PHP_EOL;
         return true;
     }
 
@@ -3496,6 +3552,38 @@ trait Gazet
         }
     }
 
+    private function setMonthlyPayment(int $iduser, array $data)
+    {
+        // get payment service
+        $paymentService = $this->getPaymentServiceFromType($data['p']);
+        // get user service uid
+        $uid = $this->getPaymentServiceUid($iduser, $paymentService);
+        // get payment link
+        $payment = $this->payment->paymentPage([
+            'amount' => $data['a'],
+            'description' => 'Abonnement La Gazet',
+            'email' => $this->getUserEmail($iduser),
+            'name' => $this->getUserName($iduser),
+            'recurring' => true,
+            'service' => $paymentService,
+            'type' => $data['p'],
+            'uid' => $uid,
+            'client_ip' => $data['ip'],
+        ]);
+        // store payment in db
+        $this->db->request([
+            'query' => 'INSERT INTO payment (iduser,idsubscription,idpayment_type,request_id,amount) VALUES (?,?,?,?,?);',
+            'type' => 'iiisi',
+            'content' => [$iduser, $data['s'], $data['p'], $payment['request_id'], $data['a']],
+        ]);
+        // return link
+        return [
+            'request_id' => $payment['request_id'],
+            'service' => $paymentService,
+            'url' => $payment['url'],
+        ];
+    }
+
     /**
      * Sets another family as default for user and returns its id.
      * @return int|null
@@ -3539,15 +3627,44 @@ trait Gazet
 
     private function setPayment(array $data)
     {
-        // if no transaction in db or status different from pending and is same as in db, return
-        // TODO: ACHTUNG, if transaction from running subscription, new transaction won't be created prior to it happening, so no transaction in db
-        // TODO: check how are handled payments from subscriptions, maybe same requestid ?
-        // get transaction from db using requestid
-        $transaction = $this->getPaymentFromRequest($data['RequestId']);
-        if (!$transaction) {
-            if (!empty($data['OriginalRequestId'])) $transaction = $this->getPaymentFromRequest($data['OriginalRequestId']);
-            if (!$transaction) {
-                echo '### ERROR: Transaction with request_id: ' . $data['RequestId'] . ' not found in database, refunding. ###' . PHP_EOL;
+        echo '### setPayment: ' . json_encode($data) . PHP_EOL;
+
+        // if not original payment of a monthly payment, create payment
+        if ($data['Rebill'] === 'yes' && $data['OriginalPaymentTid'] !== $data['Tid']) {
+            $payment = $this->getPaymentFromTid($data['Tid']);
+            if (!empty($payment)) return;
+            $originalPayment = $this->getPaymentFromTid($data['OriginalPaymentTid']);
+            $this->db->request([
+                'query' => 'INSERT INTO payment (
+                            iduser,
+                            idsubscription,
+                            idpayment_type,
+                            idmonthly_payment,
+                            request_id,
+                            transaction_id
+                            amount,
+                            status,
+                        ) VALUES (?,?,?,?,?,?,?,?);',
+                'type' => 'iiiissii',
+                'content' => [
+                    $originalPayment['iduser'],
+                    $originalPayment['idsubscription'],
+                    $originalPayment['idpayment_type'],
+                    $originalPayment['idmonthly_payment'],
+                    $data['RequestId'],
+                    $data['Tid'],
+                    $originalPayment['amount'],
+                    2,
+                ],
+            ]);
+            echo '### Rebill payment with transaction ID: ' . $data['Tid'] . ' created. ###' . PHP_EOL;
+            return;
+        }
+        $payment = $this->getPaymentFromRequest($data['RequestId']);
+        if (!$payment) {
+            if (!empty($data['OriginalRequestId'])) $payment = $this->getPaymentFromRequest($data['OriginalRequestId']);
+            if (!$payment) {
+                echo '### ERROR: Transaction with request_id: ' . $data['RequestId'] . ' not found in database. ###' . PHP_EOL;
                 // $this->payment->refund([
                 //     'service' => 1,
                 //     'transaction_id' => $data['TransactionId'],
@@ -3556,28 +3673,20 @@ trait Gazet
                 return;
             }
         }
-        if ($data['Status'] === $transaction['status']) return;
+        if ($data['Status'] === $payment['status']) return;
 
         echo '### Transaction with request_id: ' . $data['RequestId'] . ' found in database, updating. ###' . PHP_EOL;
-
-        // check subscription linked to payment
-        // set user service uid if not set
-        // if initial payment, set subscription active
-        // if payment from 
-
-        // if subscription active, refund payment
-        // if subscription pending, set subscription status to active
-        // remove any pending payments from user for subscription
-        // remove any pending subscriptions for recipient
-        // notify user of payment success
-    }
-
-    private function setPaymentFailed(array $data)
-    {
-        $transaction = $this->getPaymentFromRequest($data['RequestId']);
-
-        // cancel page, remove payment, remove subscription if no other payments
-        return true;
+        $payment['idpayment_service'] = $this->getPaymentServiceFromType($payment['idpayment_type']);
+        print('### userUpdatePayment: ' . json_encode($payment) . PHP_EOL);
+        return $this->updatePayment([
+            'original_request_id' => $data['OriginalRequestId'] ?? null,
+            'original_tid' => $data['OriginalPaymentTid'] ?? null,
+            'rebill' => $data['Rebill'] === 'yes',
+            'request_id' => $data['RequestId'],
+            'status' => $data['Status'],
+            'tid' => $data['Tid'],
+            'uid' => $data['UserId'] ?? null,
+        ], $payment);
     }
 
     private function setPublication(int $iduser, int $idfamily, array $parameters)
@@ -3964,13 +4073,56 @@ trait Gazet
         ]);
         // store payment in db
         $this->db->request([
-            'query' => 'INSERT INTO payment (iduser,idsubscription,idpayment_type,request_id,amount,status) VALUES (?,?,?,?,?,?);',
-            'type' => 'iiisii',
-            'content' => [$iduser, $idsubscription, $idPaymentType, $payment['request_id'], $amount, 0],
-            'array' => true,
+            'query' => 'INSERT INTO payment (iduser,idsubscription,idpayment_type,request_id,amount) VALUES (?,?,?,?,?);',
+            'type' => 'iiisi',
+            'content' => [$iduser, $idsubscription, $idPaymentType, $payment['request_id'], $amount],
         ]);
+        // set monthly payment <- done only if payment successful
+        // $this->db->request([
+        //     'query' => 'INSERT INTO monthly_payment (iduser,idsubscription,original_payment) VALUES (?,?,?);',
+        //     'type' => 'iii',
+        //     'content' => [$iduser, $idsubscription, $this->getPaymentFromRequest($payment['request_id'])['idpayment']],
+        // ]);
+
         // return payment link
-        return ['url' => $payment['url'], 'request_id' => $payment['request_id']];
+        return [
+            'idsubscription' => $idsubscription,
+            'request_id' => $payment['request_id'],
+            'service' => $paymentType['idpayment_service'],
+            'url' => $payment['url'],
+        ];
+    }
+
+    private function setUniquePayment(int $iduser, array $data)
+    {
+        // get payment service
+        $paymentService = $this->getPaymentServiceFromType($data['p']);
+        // get user service uid
+        $uid = $this->getPaymentServiceUid($iduser, $paymentService);
+        // get payment link
+        $payment = $this->payment->paymentPage([
+            'amount' => $data['a'],
+            'description' => 'Abonnement La Gazet',
+            'email' => $this->getUserEmail($iduser),
+            'name' => $this->getUserName($iduser),
+            'recurring' => false,
+            'service' => $paymentService,
+            'type' => $data['p'],
+            'uid' => $uid,
+            'client_ip' => $data['ip'],
+        ]);
+        // store payment in db
+        $this->db->request([
+            'query' => 'INSERT INTO payment (iduser,idsubscription,idpayment_type,request_id,amount) VALUES (?,?,?,?,?);',
+            'type' => 'iiisi',
+            'content' => [$iduser, $data['s'], $data['p'], $payment['request_id'], $data['a']],
+        ]);
+        // return link
+        return [
+            'request_id' => $payment['request_id'],
+            'service' => $paymentService,
+            'url' => $payment['url'],
+        ];
     }
 
     private function setUnseenComment(array $users, int $idcomment)
@@ -4004,20 +4156,6 @@ trait Gazet
         $newObject = $this->s3->move($key);
         $newObject['owner'] = $iduser;
         return $this->setS3Object($newObject);
-    }
-
-    /**
-     * Returns subscription ID if recipient has active subscription else false.
-     * @return bool
-     */
-    private function getSubscription(int $idrecipient)
-    {
-        return $this->db->request([
-            'query' => 'SELECT idsubscription FROM subscription WHERE idrecipient = ? AND status = 2 LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idrecipient],
-            'array' => true,
-        ])[0][0] ?? false;
     }
 
     private function testerProcess(int $iduser)
@@ -4308,27 +4446,34 @@ trait Gazet
         // $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
     }
 
-    private function updatePayment(array $payment)
+    private function updatePayment(array $serviceData, array $dbData)
     {
-        // get payment status from service
-        $data = $this->payment->status([
-            'service' => $this->getPaymentServiceFromType('idpayment_type'),
-            'request_id' => $payment['request_id'],
-        ]);
         $set = 'status = ?, transaction_id = ?';
         $type = 'isi';
-        $content = [$data['status'], $data['Tid'], $payment['idpayment']];
-        // if monthly payment, update subscription
-        if ($data['status'] === 2 && $data['rebill']) {
+        $content = [$serviceData['status'], $serviceData['tid'], $dbData['idpayment']];
+        // if user doesn't have service uid set, set it
+        if (!empty($serviceData['uid']) && empty($this->getPaymentServiceUid($dbData['iduser'], $dbData['idpayment_service']))) {
             $this->db->request([
-                'query' => 'INSERT INTO monthly_payment (iduser, idsubscription, original_Tid) VALUES (?,?,?);',
+                'query' => 'INSERT INTO payment_service_uid (idpayment_service,iduser,uid) VALUES (?,?,?);',
                 'type' => 'iis',
-                'content' => [$payment['iduser'], $payment['idsubscription'], $data['original_Tid']],
+                'content' => [$dbData['idpayment_service'], $dbData['iduser'], $serviceData['uid']],
+            ]);
+        }
+        // if first payment of monthly payment, check if it exists in db, if not, create it
+        if (
+            $serviceData['status'] === 2 &&
+            $serviceData['rebill'] &&
+            $serviceData['tid'] === $serviceData['original_tid']
+        ) {
+            $this->db->request([
+                'query' => 'INSERT INTO monthly_payment (idsubscription, iduser , original_payment) VALUES (?,?,?);',
+                'type' => 'iii',
+                'content' => [$dbData['iduser'], $dbData['idsubscription'], $dbData['idpayment']],
             ]);
             $idMonthlyPayment = $this->db->request([
-                'query' => 'SELECT idmonthly_payment FROM monthly_payment WHERE iduser = ? AND idsubscription = ? AND original_Tid = ? LIMIT 1;',
-                'type' => 'iis',
-                'content' => [$payment['iduser'], $payment['idsubscription'], $data['original_Tid']],
+                'query' => 'SELECT idmonthly_payment FROM monthly_payment WHERE original_payment = ? LIMIT 1;',
+                'type' => 'i',
+                'content' => [$dbData['idpayment']],
                 'array' => true,
             ])[0][0];
             $set = 'idmonthly_payment = ?, ' . $set;
@@ -4341,16 +4486,16 @@ trait Gazet
             'type' => $type,
             'content' => $content,
         ]);
-        // update subscription if needed
-        if ($data['status'] === 2 && $this->checkPendingSubscription($payment['idsubscription'])) {
-            $this->db->request([
-                'query' => 'UPDATE subscription SET status = 2 WHERE idsubscription = ? LIMIT 1;',
-                'type' => 'i',
-                'content' => [$payment['idsubscription']],
-            ]);
+        // update subscription if user is referent
+        if (
+            $dbData['iduser'] === $this->getReferent($this->getSubscriptionRecipient($dbData['idsubscription'])) &&
+            $serviceData['status'] === 2
+        ) {
+            echo '### Referent\'s payment, updating subscription ###' . PHP_EOL;
+            $this->updateSubscription($dbData['idsubscription'], 2);
         }
         // return status
-        return $data['status'];
+        return $serviceData['status'];
     }
 
     private function updatePublication(int $idpublication, array $parameters)
@@ -4531,6 +4676,40 @@ trait Gazet
         return $idobject;
     }
 
+    /**
+     * Updates subscription status and notifies family members.
+     * @param int $idsubscription
+     * @param int $status
+     * @return void
+     */
+    private function updateSubscription(int $idsubscription, int $status)
+    {
+        $data = $this->getSubscriptionData($idsubscription);
+        if (
+            $status === $data['status'] ||
+            ($status === 2 && $data['status'] !== 1) ||
+            ($status === 3 && $data['status'] !== 2) ||
+            ($status === 4 && !in_array($data['status'], [2, 3]))
+        ) return;
+        $this->db->request([
+            'query' => 'UPDATE subscription SET status = ? WHERE idsubscription = ? LIMIT 1;',
+            'type' => 'ii',
+            'content' => [$status, $idsubscription],
+        ]);
+        $family = $this->getRecipientFamily($data['idrecipient']);
+        // notify members of subscription update
+        $this->sendData(
+            $this->getFamilyMembers($family),
+            [
+                'family' => $family,
+                'recipient' => $data['idrecipient'],
+                'status' => $status,
+                'subscription' => $idsubscription,
+                'type' => 20,
+            ]
+        );
+    }
+
     private function updateUser(int $iduser, array $parameters)
     {
         // TODO: change email or phone with verification process
@@ -4660,9 +4839,9 @@ trait Gazet
 
     private function userCancelMonthlyPayment(int $iduser, int $idsubscription)
     {
-        $payment = $this->getMonthlyPayments($idsubscription, $iduser);
-        if (!$payment) return false;
-        $this->cancelMonthlyPayment($payment);
+        $monthly = $this->getMonthlyPayments($idsubscription, $iduser);
+        if (!$monthly) return false;
+        $this->cancelMonthlyPayment($monthly);
         return true;
     }
 
@@ -5017,17 +5196,25 @@ trait Gazet
         ]));
     }
 
-    private function userUpdatePayment(int $iduser, string $transactionId, int $status)
+    private function userUpdatePayment(int $iduser, int $service, string $transactionId, int $status)
     {
-        // $payment = $this->getPaymentFromRequest($requestId);
-        // // if payment doesn't exist or user is not owner, return false
-        // if (!$payment || $payment['iduser'] !== $iduser) return false;
-        // // if payment already updated, return true
-        // if ($payment['status'] === $status) return true;
-
-        // TODO: refact this: app only gets transactionId, not requestId, so first get status from service from transaction id to get originalRequestId to update payment in db
-        // $this->updatePayment($payment);
-        return true;
+        // get payment data from service
+        $data = $this->payment->status([
+            'service' => $service,
+            'transaction_id' => $transactionId,
+        ]);
+        $requestId = $data['request_id'];
+        $payment = $this->getPaymentFromRequest($requestId);
+        $payment['idpayment_service'] = $service;
+        print('### userUpdatePayment: ' . json_encode($payment) . PHP_EOL);
+        // if payment doesn't exist or user is not owner, return false
+        if (!$payment || $payment['iduser'] !== $iduser) return false;
+        // if payment not updated from service, update it
+        if ($payment['status'] === $status) {
+            echo '### userUpdatePayment: status already updated' . PHP_EOL;
+            return true;
+        }
+        return $this->updatePayment($data, $payment);
     }
 
     private function userRefusesInvitation($iduser, $idfamily)
@@ -5210,6 +5397,17 @@ trait Gazet
         return $this->setCommentLike($iduser, $idfamily, $idcomment);
     }
 
+    private function userSetMonthlyPayment(int $iduser, array $data)
+    {
+        if (
+            // if no active subscription, return false
+            !$this->checkSubscriptionActive($data['s']) ||
+            // if user has already a monthly payment, return false
+            !empty($this->getMonthlyPayments($data['s'], $iduser))
+        ) return false;
+        return $this->setMonthlyPayment($iduser, $data);
+    }
+
     private function userSetPublication(int $iduser, int  $idfamily, array $parameters)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
@@ -5236,6 +5434,17 @@ trait Gazet
     {
         if (!$this->userIsReferent($iduser, $idrecipient)) return false;
         return $this->setSubscription($iduser, $idrecipient, $idSubscriptionType, $idPaymentType, $ip);
+    }
+
+    private function userSetUniquePayment(int $iduser, array $data)
+    {
+        if (
+            // if no active subscription, return false
+            !$this->checkSubscriptionActive($data['s']) ||
+            // if user has already a monthly payment, return false
+            !empty($this->getMonthlyPayments($data['s'], $iduser))
+        ) return false;
+        return $this->setUniquePayment($iduser, $data);
     }
 
     private function userToggleAutocorrect(int $iduser)

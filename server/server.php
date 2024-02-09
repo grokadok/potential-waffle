@@ -254,7 +254,7 @@ class FWServer
         // print(PHP_EOL);
 
         // PDF server test
-        echo $this->pdf->request(0) ? '#### Pdf service connected. ####' : '!!!! Pdf service not connected. !!!!' . PHP_EOL;
+        echo ($this->pdf->request(0) ? '#### Pdf service connected. ####'  : '!!!! Pdf service not connected. !!!!') . PHP_EOL;
 
         // Payment test
         // print('@@@@ Start test transaction @@@@' . PHP_EOL);

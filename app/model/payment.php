@@ -58,48 +58,6 @@ class Payment
         }
     }
 
-    public function paymentPage(array $data)
-    {
-        switch ($data['service']) {
-            case 1: // easytransac
-                return $this->paymentPageEasyTransac($data);
-                break;
-        }
-    }
-
-    private function paymentPageEasyTransac(array $data)
-    {
-        $customer = (new EasyTransac\Entities\Customer())->setEmail($data['email']);
-        if (!empty($data['firstname'])) $customer->setFirstname($data['firstname']);
-        if (!empty($data['lastname'])) $customer->setLastname($data['lastname']);
-        if (!empty($data['uid'])) $customer->setUid($data['uid']);
-
-        $transaction = (new EasyTransac\Entities\PaymentPageTransaction())
-            ->setAmount($data['amount'])
-            ->setClientIp($data['client_ip'])
-            ->setCustomer($customer)
-            ->setOperationType($data['type'])
-            ->setReturnUrl('https://lagazet.com/return')
-            ->setReturnMethod('GET')
-            ->setCancelUrl('https://lagazet.com/cancel');
-        if ($data['recurring']) {
-            $transaction->setRebill('yes')
-                ->setRecurrence('monthly');
-        }
-        $pp = new EasyTransac\Requests\PaymentPage();
-        $response = $pp->execute($transaction);
-
-        if ($response->isSuccess()) {
-            $transactionItem = $response->getContent();
-            return [
-                'request_id' => $transactionItem->getRequestId(),
-                'url' => $transactionItem->getPageUrl(),
-            ];
-        } else {
-            var_dump($response->getErrorMessage());
-        }
-    }
-
     public function cancelPage(array $data)
     {
         switch ($data['service']) {
@@ -143,11 +101,58 @@ class Payment
         if ($response->isSuccess()) {
             $transactionItem = $response->getContent();
             echo '#### Easytransac: Subscription canceled ####' . PHP_EOL;
-            var_dump($transactionItem);
+            // var_dump($transactionItem);
             return true;
         } else {
             var_dump($response->getErrorMessage());
             return false;
+        }
+    }
+
+    public function parseStatus(string $string)
+    {
+        return $this->status[$string];
+    }
+
+    public function paymentPage(array $data)
+    {
+        switch ($data['service']) {
+            case 1: // easytransac
+                return $this->paymentPageEasyTransac($data);
+                break;
+        }
+    }
+
+    private function paymentPageEasyTransac(array $data)
+    {
+        $customer = (new EasyTransac\Entities\Customer())->setEmail($data['email']);
+        if (!empty($data['firstname'])) $customer->setFirstname($data['firstname']);
+        if (!empty($data['lastname'])) $customer->setLastname($data['lastname']);
+        if (!empty($data['uid'])) $customer->setUid($data['uid']);
+
+        $transaction = (new EasyTransac\Entities\PaymentPageTransaction())
+            ->setAmount($data['amount'])
+            ->setClientIp($data['client_ip'])
+            ->setCustomer($customer)
+            ->setOperationType($data['type'])
+            ->setReturnUrl('https://lagazet.com/return')
+            ->setReturnMethod('GET')
+            ->setCancelUrl('https://lagazet.com/cancel');
+        if ($data['recurring']) {
+            $transaction->setRebill('yes')
+                ->setRecurrence('monthly');
+        }
+        $pp = new EasyTransac\Requests\PaymentPage();
+        $response = $pp->execute($transaction);
+
+        if ($response->isSuccess()) {
+            $transactionItem = $response->getContent();
+            return [
+                'request_id' => $transactionItem->getRequestId(),
+                'url' => $transactionItem->getPageUrl(),
+            ];
+        } else {
+            var_dump($response->getErrorMessage());
         }
     }
 
@@ -173,8 +178,8 @@ class Payment
 
         if ($response->isSuccess()) {
             $refundItem = $response->getContent();
-            echo '#### Refund successful ####' . PHP_EOL;
-            var_dump($refundItem);
+            echo '#### Easytransac: Refund successful ####' . PHP_EOL;
+            // var_dump($refundItem);
             return true;
         } else {
             var_dump($response->getErrorMessage());
@@ -206,15 +211,21 @@ class Payment
         if ($response->isSuccess()) {
             $transactionItem = $response->getContent();
             echo '#### Easytransac: Transaction status: ' . $transactionItem->getStatus() . ' ####' . PHP_EOL;
-            var_dump($transactionItem);
+            // var_dump($transactionItem);
 
             // return an associative array of the transaction status with transaction id
             $payload = [
-                'Tid' => $transactionItem->getTid(),
+                'original_request_id' => $transactionItem->getOriginalRequestId(),
+                'original_tid' => $transactionItem->getOriginalPaymentTid(),
                 'rebill' => $transactionItem->getRebill() === 'yes',
-                'original_Tid' => $transactionItem->getOriginalPaymentTid(),
+                'request_id' => $transactionItem->getRequestId(),
+                'status' => $this->status[$transactionItem->getStatus()],
+                'tid' => $transactionItem->getTid(),
+                'uid' => $transactionItem->getUid(),
             ];
-            $payload['status'] = $this->status[$transactionItem->getStatus()];
+            echo '### Easytransac payload: ' . PHP_EOL;
+            var_dump($payload);
+            // $payload['status'] = $this->status[$transactionItem->getStatus()];
             if (empty($payload['status'])) throw new Exception("Transaction status message not recognized: " . $transactionItem->getStatus(), 1);
             return $payload;
         } else {

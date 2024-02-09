@@ -532,7 +532,6 @@ trait Http
 
             if ($f === 56) {
                 $responseContent = ['f' => 56, 'payment' => $this->userSetSubscription($iduser, $post['r'], $post['s'], $post['p'], $post['ip'])];
-                // recipient, subscription type, payment type
             }
 
             /////////////////////////////////////////////////////
@@ -548,7 +547,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 58) {
-                $responseContent = ['f' => 58, 'cancelled' => $this->userCancelPayment($iduser, $post['r'])];
+                $responseContent = ['f' => 58, 'canceled' => $this->userCancelPayment($iduser, $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -556,7 +555,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 59) {
-                $responseContent = ['f' => 59, 'payment' => $this->userUpdatePayment($iduser, $post['t'], $post['s'])];
+                $responseContent = ['f' => 59, 'payment' => $this->userUpdatePayment($iduser, $post['p'], $post['t'], $post['s'])];
             }
 
             /////////////////////////////////////////////////////
@@ -564,7 +563,23 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 60) {
-                $responseContent = ['f' => 60, 'cancelled' => $this->userCancelMonthlyPayment($iduser, $post['r'], $post['s'])];
+                $responseContent = ['f' => 60, 'canceled' => $this->userCancelMonthlyPayment($iduser, $post['s'])];
+            }
+
+            /////////////////////////////////////////////////////
+            // START MONTHLY PAYMENT (61)
+            /////////////////////////////////////////////////////
+
+            if ($f === 61) {
+                $responseContent = ['f' => 61, 'payment' => $this->userSetMonthlyPayment($iduser, $post)];
+            }
+
+            /////////////////////////////////////////////////////
+            // START UNIQUE PAYMENT (62)
+            /////////////////////////////////////////////////////
+
+            if ($f === 62) {
+                $responseContent = ['f' => 62, 'payment' => $this->userSetUniquePayment($iduser, $post)];
             }
 
 
