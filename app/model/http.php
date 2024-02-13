@@ -98,7 +98,6 @@ trait Http
                 $userData = $this->getUserData($iduser);
 
                 $responseContent = [
-                    'admin' => $this->userIsAdmin($iduser),
                     'f' => 1, // login approved
                     'families' => $this->userGetFamiliesData($iduser),
                     'gazetteTypes' => $this->getGazetteTypes(),
@@ -195,7 +194,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 12) {
-                $responseContent = ['f' => 12, 'amount' => $this->getSubscriptionMembersShare($post['i'])];
+                $responseContent = ['f' => 12, 'shares' => $this->getSubscriptionShares($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
@@ -547,7 +546,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 58) {
-                $responseContent = ['f' => 58, 'canceled' => $this->userCancelPayment($iduser, $post['r'])];
+                $responseContent = ['f' => 58, 'canceled' => $this->userCancelPaymentProcess($iduser, $post['r'])];
             }
 
             /////////////////////////////////////////////////////
@@ -559,27 +558,19 @@ trait Http
             }
 
             /////////////////////////////////////////////////////
-            // CANCEL MONTHLY PAYMENT (60)
+            // CANCEL MEMBER PARTICIPATION (60)
             /////////////////////////////////////////////////////
 
             if ($f === 60) {
-                $responseContent = ['f' => 60, 'canceled' => $this->userCancelMonthlyPayment($iduser, $post['s'])];
+                $responseContent = ['f' => 60, 'canceled' => $this->userCancelParticipation($iduser, $post['r'])];
             }
 
             /////////////////////////////////////////////////////
-            // START MONTHLY PAYMENT (61)
+            // START PAYMENT (61)
             /////////////////////////////////////////////////////
 
             if ($f === 61) {
-                $responseContent = ['f' => 61, 'payment' => $this->userSetMonthlyPayment($iduser, $post)];
-            }
-
-            /////////////////////////////////////////////////////
-            // START UNIQUE PAYMENT (62)
-            /////////////////////////////////////////////////////
-
-            if ($f === 62) {
-                $responseContent = ['f' => 62, 'payment' => $this->userSetUniquePayment($iduser, $post)];
+                $responseContent = ['f' => 61, 'payment' => $this->userSetPayment($iduser, $post)];
             }
 
 

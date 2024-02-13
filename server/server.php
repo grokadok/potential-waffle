@@ -189,12 +189,7 @@ class FWServer
                 // TODO: handle easytransac webhook and filter by ips stored in env
                 if ($request_uri === "/easytransac") {
                     if ($server["remote_addr"] === '192.168.65.1' && in_array($request->header['x-forwarded-for'], explode(',', getenv('EASYTRANSAC_IPS')))) {
-                        // if (in_array($server["remote_addr"], getenv('EASYTRANSAC_IPS'))) {
-                        // $this->payment->easytransacWebhook($request->getContent());
-                        $this->serv->task([
-                            'body' => $request->getContent(),
-                            'task' => 'easytransacWebhook',
-                        ]);
+                        $this->handleEasyTransacWebhook($request->getContent());
                         $response->status(200);
                         return $response->end();
                     }
@@ -306,9 +301,9 @@ class FWServer
                         ], $task->worker_id);
                     }
                     break;
-                case 'easytransacWebhook':
-                    $this->handleEasyTransacWebhook($task->data['body']);
-                    break;
+                    // case 'easytransacWebhook':
+                    //     $this->handleEasyTransacWebhook($task->data['body']);
+                    //     break;
             }
             $task->finish("AsyncTask[id={$task->id}] -> OK");
         } catch (Throwable $e) {
