@@ -186,6 +186,7 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
+                echo "### POST REQUEST URI: " . $request_uri . PHP_EOL;
                 // TODO: handle easytransac webhook and filter by ips stored in env
                 if ($request_uri === "/easytransac") {
                     if ($server["remote_addr"] === '192.168.65.1' && in_array($request->header['x-forwarded-for'], explode(',', getenv('EASYTRANSAC_IPS')))) {
@@ -301,9 +302,6 @@ class FWServer
                         ], $task->worker_id);
                     }
                     break;
-                    // case 'easytransacWebhook':
-                    //     $this->handleEasyTransacWebhook($task->data['body']);
-                    //     break;
             }
             $task->finish("AsyncTask[id={$task->id}] -> OK");
         } catch (Throwable $e) {
