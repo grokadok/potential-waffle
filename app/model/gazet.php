@@ -2770,9 +2770,7 @@ trait Gazet
 
     private function handleEasyTransacWebhook(string $string)
     {
-        echo '### EasyTransac Webhook ###' . PHP_EOL;
         parse_str($string, $data);
-        var_dump($data);
         $status = [
             'pending' => 1,
             'captured' => 2,
@@ -2784,23 +2782,23 @@ trait Gazet
 
         switch ($data['Status']) {
             case 1: // pending
-                echo '### Payment pending ###' . PHP_EOL;
+                echo '### EasyTransac Webhook: Payment pending ###' . PHP_EOL;
                 // do nothing
                 break;
             case 2: // captured
-                echo '### Payment captured ###' . PHP_EOL;
+                echo '### EasyTransac Webhook: Payment captured ###' . PHP_EOL;
                 $this->setPaymentFromWebhook($data);
                 break;
             case 3: // failed
-                echo '### Payment failed ###' . PHP_EOL;
+                echo '### EasyTransac Webhook: Payment failed ###' . PHP_EOL;
                 // TODO: handle failed payment from easytransac push notifications
                 break;
             case 4:
-                echo '### Payment authorized ###' . PHP_EOL;
+                echo '### EasyTransac Webhook: Payment authorized ###' . PHP_EOL;
                 // do nothing, pre authorized payments are not handled
                 break;
             case 5: // refunded
-                echo '### Payment refunded ###' . PHP_EOL;
+                echo '### EasyTransac Webhook: Payment refunded ###' . PHP_EOL;
                 // TODO: handle refund from easytransac push notifications
                 break;
         }
@@ -4492,7 +4490,7 @@ trait Gazet
             echo '### Member\'s payment, notifying other members ###' . PHP_EOL;
             $family = $this->getRecipientFamily($recipient);
             $this->sendData(
-                $this->getFamilyMembers($family, [$dbData['iduser']]),
+                $this->getFamilyMembers($family),
                 [
                     'date' => date('Y-m-d H:i:s'),
                     'family' => $family,
@@ -4865,7 +4863,7 @@ trait Gazet
         // notify members
         $family = $this->getRecipientFamily($idrecipient);
         $this->sendData(
-            $this->getFamilyMembers($family, [$iduser]),
+            $this->getFamilyMembers($family),
             [
                 'date' => date('Y-m-d H:i:s'),
                 'family' => $family,

@@ -73,10 +73,7 @@ class Payment
         $request = new EasyTransac\Requests\PaymentPageCancellation();
         $response = $request->execute($transaction);
         if ($response->isSuccess()) {
-            // verify the status of the transaction
-            // $transactionItem = $response->getContent();
             echo '#### Easytransac: Payment page canceled, requestId:' . $response->getContent()->getRequestId() . ' ####' . PHP_EOL;
-            // var_dump($transactionItem);
             return true;
         } else {
             var_dump($response->getErrorMessage());
@@ -99,9 +96,7 @@ class Payment
         $request = new EasyTransac\Requests\Cancellation();
         $response = $request->execute($transaction);
         if ($response->isSuccess()) {
-            $transactionItem = $response->getContent();
             echo '#### Easytransac: Subscription canceled ####' . PHP_EOL;
-            // var_dump($transactionItem);
             return true;
         } else {
             var_dump($response->getErrorMessage());
@@ -177,9 +172,7 @@ class Payment
         $response = $request->execute($refund);
 
         if ($response->isSuccess()) {
-            $refundItem = $response->getContent();
             echo '#### Easytransac: Refund successful ####' . PHP_EOL;
-            // var_dump($refundItem);
             return true;
         } else {
             var_dump($response->getErrorMessage());
@@ -210,10 +203,6 @@ class Payment
 
         if ($response->isSuccess()) {
             $transactionItem = $response->getContent();
-            echo '#### Easytransac: Transaction status: ' . $transactionItem->getStatus() . ' ####' . PHP_EOL;
-            // var_dump($transactionItem);
-
-            // return an associative array of the transaction status with transaction id
             $payload = [
                 'original_request_id' => $transactionItem->getOriginalRequestId(),
                 'original_tid' => $transactionItem->getOriginalPaymentTid(),
@@ -223,9 +212,6 @@ class Payment
                 'tid' => $transactionItem->getTid(),
                 'uid' => $transactionItem->getUid(),
             ];
-            echo '### Easytransac payload: ' . PHP_EOL;
-            var_dump($payload);
-            // $payload['status'] = $this->status[$transactionItem->getStatus()];
             if (empty($payload['status'])) throw new Exception("Transaction status message not recognized: " . $transactionItem->getStatus(), 1);
             return $payload;
         } else {
