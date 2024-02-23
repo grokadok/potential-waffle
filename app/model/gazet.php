@@ -143,7 +143,7 @@ trait Gazet
                 $this->cancelMonthlyPayment($monthly);
 
         // then refund remaining non-recurring payment for current month
-        $payments = $this->getSubscriptionLastPayments($idsubscription);
+        $payments = $this->getSubscriptionLastPayments($idsubscription, ['captured' => true]);
         if (!empty($payments))
             foreach ($payments as $payment)
                 if (empty($payment['idmonthly_payment']))
@@ -152,6 +152,19 @@ trait Gazet
         // then set subscription status to canceled
         $this->updateSubscription($idsubscription, 4);
         return true;
+    }
+
+    /**
+     * Check subscription for active month captured payments.
+     */
+    private function checkActivePayment(int $idsubscription)
+    {
+        $window = $this->getPaymentWindow();
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM payment WHERE idsubscription = ? AND status = 2 AND updated > ' . $window['start'] . ' AND updated < ' . $window['end'] . ' LIMIT 1;',
+            'type' => 'i',
+            'content' => [$idsubscription],
+        ]));
     }
 
     /**
@@ -307,6 +320,18 @@ trait Gazet
             'query' => 'SELECT NULL FROM recipient WHERE idfamily = ? AND display_name = ? LIMIT 1;',
             'type' => 'is',
             'content' => [$idfamily, $name],
+        ]));
+    }
+
+    /**
+     * Check if recipient(s) has any active subscription.
+     * @return bool
+     */
+    private function checkRecipientsSubscription(array $recipients)
+    {
+        $recipients = implode(',', $recipients);
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM subscription WHERE idrecipient IN (' . $recipients . ') AND status = 2 LIMIT 1;',
         ]));
     }
 
@@ -609,7 +634,7 @@ trait Gazet
         ]));
     }
 
-    private function familyHasOtherMembers(int $iduser, int $idfamily)
+    private function familyHasOtherMembers(int $idfamily, int $iduser)
     {
         return !empty($this->db->request([
             'query' => 'SELECT NULL FROM family_has_member WHERE idfamily = ? AND iduser != ? LIMIT 1;',
@@ -1033,6 +1058,23 @@ trait Gazet
             'content' => [$writer[0]],
         ])[0];
         return $result;
+    }
+
+    private function getFamiliesMembers(array $families, array $exclude = [])
+    {
+        $families = implode(',', $families);
+        $where = '';
+        if (!empty($exclude)) {
+            $exclude = implode(',', $exclude);
+            $where = ' AND iduser NOT IN (' . $exclude . ')';
+        }
+        $members = $this->db->request([
+            'query' => 'SELECT DISTINCT iduser FROM family_has_member WHERE idfamily IN (' . $families . ')' . $where . ';',
+            'array' => true,
+        ]);
+        if (empty($members)) return [];
+        foreach ($members as &$member) $member = $member[0];
+        return $members;
     }
 
     /**
@@ -2218,7 +2260,7 @@ trait Gazet
     private function getReferentRecipients(int $iduser, int $idfamily)
     {
         $recipients = $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE iduser = ? AND idfamily = ?;',
+            'query' => 'SELECT idrecipient FROM recipient WHERE referent = ? AND idfamily = ?;',
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
             'array' => true,
@@ -2299,17 +2341,13 @@ trait Gazet
         return empty($subscription) ? false : $subscription;
     }
 
-    /**
-     * Returns current month payments for given subscription id, for given member if provided, all if not.
-     * @param int $idsubscription
-     * @return array|false
-     */
-    private function getSubscriptionLastPayments(int $idsubscription, int $iduser = null)
+    private function getSubscriptionLastPayments(int $idsubscription, array $params = [])
     {
         $window = $this->getPaymentWindow();
-        $user = !empty($iduser) ? 'AND iduser = ' . $iduser . ' ' : '';
+        $user = !empty($params['iduser']) ? 'AND iduser = ' . $params['iduser'] . ' ' : '';
+        $status = !empty($params['captured']) ? '= 2' : '< 3';
         $payments = $this->db->request([
-            'query' => 'SELECT idpayment,iduser,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idsubscription = ? AND status = 2 ' . $user . 'AND updated >= ? AND updated <= ?;',
+            'query' => 'SELECT idpayment,iduser,idsubscription,request_id,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idsubscription = ? AND status ' . $status . ' ' . $user . 'AND updated >= ? AND updated <= ?;',
             'type' => 'iss',
             'content' => [$idsubscription, $window['start'], $window['end']],
         ]);
@@ -2335,19 +2373,16 @@ trait Gazet
 
     private function getSubscriptionShares(int $iduser, int $idrecipient)
     {
-        echo '### Getting subscription shares.' . PHP_EOL;
         $subscription = $this->getRecipientSubscription($idrecipient);
-        if (empty($subscription)) {
-            echo '### No active subscription found.' . PHP_EOL;
+        if (empty($subscription) || $subscription['status'] !== 2) {
             return false;
         }
         $membersShare = 0;
         $userShare = 0;
         // get active month payments for given subscription
-        $payments = $this->getSubscriptionLastPayments($subscription['idsubscription']);
+        $payments = $this->getSubscriptionLastPayments($subscription['idsubscription'], ['captured' => true]);
         $price = $this->getSubscriptionPrice($subscription['idsubscription_type']);
         if (empty($payments)) {
-            echo '### No payment found for subscription #' . $subscription['idsubscription'] . '.' . PHP_EOL;
             return [
                 'members' => $membersShare,
                 'referent' => $price,
@@ -2365,13 +2400,6 @@ trait Gazet
                 if ($payment['iduser'] === $iduser) $userShare = $payment['amount'] - $payment['refund'];
             }
         }
-        echo '### Shares: ' . PHP_EOL;
-        print_r([
-            'members' => $membersShare,
-            'referent' => $price - $membersShare,
-            'user' => $userShare,
-        ]);
-        echo '### End shares' . PHP_EOL;
         return [
             'members' => $membersShare,
             'referent' => $price - $membersShare,
@@ -2561,7 +2589,7 @@ trait Gazet
     }
 
     /**
-     * Returns all families ID user is in, sorted by name.
+     * Returns all families data user is in, sorted by name.
      */
     private function getUserFamilies(int $iduser)
     {
@@ -2587,13 +2615,6 @@ trait Gazet
             'content' => [$iduser],
             'array' => true,
         ]) as $family) $families[$family[0]]['recipient'] = true;
-        // get families where user is admin
-        // foreach ($this->db->request([
-        //     'query' => 'SELECT idfamily FROM family WHERE admin = ?;',
-        //     'type' => 'i',
-        //     'content' => [$iduser],
-        //     'array' => true,
-        // ]) as $family) $families[$family[0]]['admin'] = true;
 
         $default = $this->getUserDefaultFamily($iduser);
         $invitations = $this->getUserInvitations($iduser);
@@ -2770,6 +2791,9 @@ trait Gazet
 
     private function handleEasyTransacWebhook(string $string)
     {
+        echo '### EasyTransac Webhook ###' . PHP_EOL;
+        print($string . PHP_EOL);
+        echo '### End of EasyTransac Webhook ###' . PHP_EOL;
         parse_str($string, $data);
         $status = [
             'pending' => 1,
@@ -3036,12 +3060,13 @@ trait Gazet
 
     private function removeMember(int $iduser, int $idfamily)
     {
-        // TODO: if leaver is referent for recipient(s) AND not admin, set admin referent with notification
+        // if user is recipient, remove recipient from family
+        $recipient = $this->userIsRecipientOfFamily($iduser, $idfamily);
+        if ($recipient) $this->removeRecipient($idfamily, $recipient);
+
+        // if user is referent, set admin as referent
         $recipients = $this->getReferentRecipients($iduser, $idfamily);
-        if ($recipients) {
-            $admin = $this->getFamilyAdmin($idfamily);
-            foreach ($recipients as $recipient) $this->setReferent($idfamily, $recipient, $admin);
-        }
+        if (!empty($recipients)) $this->resetRecipientsReferent($recipients, $idfamily);
 
         // TODO: keep/archive member's family data for some time in case user joins again in the future ?
         $this->removePublicationsByFamilyMember($iduser, $idfamily);
@@ -3208,7 +3233,7 @@ trait Gazet
         return true;
     }
 
-    private function removeRecipientAvatar($idrecipient)
+    private function removeRecipientAvatar(int $iduser, int $idrecipient)
     {
         $idobject = $this->getRecipientAvatar($idrecipient);
         if (!$idobject) return true;
@@ -3218,6 +3243,15 @@ trait Gazet
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
+        $family = $this->getRecipientFamily($idrecipient);
+        $this->sendData(
+            $this->getFamilyMembers($family, [$iduser]),
+            [
+                'family' => $family,
+                'recipient' => $idrecipient,
+                'type' => 25,
+            ]
+        );
         return $idobject;
     }
 
@@ -3308,6 +3342,17 @@ trait Gazet
             'type' => 'i',
             'content' => [$iduser],
         ]);
+        $families = $this->getUserFamilies($iduser);
+        if (!empty($families))
+            foreach ($families as &$family) $family = $family['id'];
+        $this->sendData(
+            $this->getFamiliesMembers($families, [$iduser]),
+            [
+                'families' => json_encode($families),
+                'member' => $iduser,
+                'type' => 24,
+            ]
+        );
         return $idobject;
     }
 
@@ -3409,6 +3454,21 @@ trait Gazet
         if ($status === 2) return; // gazette already generating
         // send request to pdf server
         return $this->pdf->request($idgazette);
+    }
+
+    /**
+     * Set recipients' referent as admin of family 
+     * (!!CHECK if no active subscription before invoking!!)
+     */
+    private function resetRecipientsReferent(array $recipients, int $idfamily)
+    {
+        $recipients = implode(',', $recipients);
+        $admin = $this->getFamilyAdmin($idfamily);
+        $this->db->request([
+            'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient IN (' . $recipients . ');',
+            'type' => 'i',
+            'content' => [$admin],
+        ]);
     }
 
     private function sendData(array $users, array $data = [])
@@ -3682,7 +3742,6 @@ trait Gazet
     private function setPaymentFromWebhook(array $data)
     {
         echo '### setPayment: ' . json_encode($data) . PHP_EOL;
-
         // if not original payment of a monthly payment, create payment
         if ($data['Rebill'] === 'yes' && $data['OriginalPaymentTid'] !== $data['Tid']) {
             $payment = $this->getPaymentFromTid($data['Tid']);
@@ -3741,7 +3800,7 @@ trait Gazet
 
         echo '### Transaction with request_id: ' . $data['RequestId'] . ' found in database, updating. ###' . PHP_EOL;
         $payment['idpayment_service'] = $this->getPaymentServiceFromType($payment['idpayment_type']);
-        print('### userUpdatePayment: ' . json_encode($payment) . PHP_EOL);
+        echo '### userUpdatePayment: ' . json_encode($payment) . PHP_EOL;
         return $this->updatePayment([
             'original_request_id' => $data['OriginalRequestId'] ?? null,
             'original_tid' => $data['OriginalPaymentTid'] ?? null,
@@ -4007,18 +4066,38 @@ trait Gazet
     private function setReferent(int $idfamily, int $idrecipient, int $idreferent)
     {
         // if subscription exists
-        if (!empty($this->getRecipientSubscription($idrecipient))) {
-            $this->db->request([
-                'query' => 'UPDATE recipient SET pending_referent = ? WHERE idrecipient = ? LIMIT 1;',
-                'type' => 'ii',
-                'content' => [$idreferent, $idrecipient],
-            ]);
-            return 1;
+        $subscription = $this->getRecipientSubscription($idrecipient);
+        if (!empty($subscription)) {
+            switch ($subscription['status']) {
+                case 1: // subscription pending
+                    // check payment status, if captured, update subscripition & return 1
+                    if ($this->checkActivePayment($subscription['idsubscription'])) {
+                        $this->db->request([
+                            'query' => 'UPDATE subscription SET status = 2 WHERE idsubscription = ? LIMIT 1;',
+                            'type' => 'i',
+                            'content' => [$subscription['idsubscription']],
+                        ]);
+                        return 1;
+                    }
+                    // get subscription payments
+                    $payments = $this->getSubscriptionLastPayments($subscription['idsubscription']);
+                    if (empty($payments)) {
+                        $this->db->request([
+                            'query' => 'DELETE FROM subscription WHERE idsubscription = ? LIMIT 1;',
+                            'type' => 'i',
+                            'content' => [$subscription['idsubscription']],
+                        ]);
+                        break;
+                    } else foreach ($payments as $payment) $this->cancelPaymentProcess($payment);
+                    break;
+                case 2:
+                    return 1;
+            }
         }
         // else set referent
         $oldReferent = $this->getReferent($idrecipient);
         $this->db->request([
-            'query' => 'UPDATE recipient SET referent = ?, pending_referent = NULL WHERE idrecipient = ? LIMIT 1;',
+            'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$idreferent, $idrecipient],
         ]);
@@ -4483,11 +4562,9 @@ trait Gazet
             $dbData['iduser'] === $this->getReferent($recipient)
         ) {
             if ($serviceData['status'] === 2) {
-                echo '### Referent\'s payment, updating subscription ###' . PHP_EOL;
                 $this->updateSubscription($dbData['idsubscription'], 2);
             }
         } else {
-            echo '### Member\'s payment, notifying other members ###' . PHP_EOL;
             $family = $this->getRecipientFamily($recipient);
             $this->sendData(
                 $this->getFamilyMembers($family),
@@ -4564,9 +4641,14 @@ trait Gazet
         }
     }
 
-    private function updateRecipient(int $iduser, int $idrecipient, array $parameters)
+    private function updateRecipient(int $iduser, array $parameters)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $this->getRecipientFamily($idrecipient)) && !$this->userIsReferent($iduser, $idrecipient) && !$this->userIsRecipient($iduser, $idrecipient)) {
+        $idfamily = $this->getRecipientFamily($parameters['id']);
+        if (
+            !$this->userIsAdminOfFamily($iduser, $idfamily) &&
+            !$this->userIsReferent($iduser, $parameters['id']) &&
+            !$this->userIsRecipient($iduser, $parameters['id'])
+        ) {
             print('updateRecipient: FALSE' . PHP_EOL);
             return false;
         }
@@ -4588,12 +4670,23 @@ trait Gazet
             $this->db->request([
                 'query' => 'UPDATE recipient SET ' . $set . ' WHERE idrecipient = ? LIMIT 1;',
                 'type' => $type . 'i',
-                'content' => [...$content, $idrecipient],
+                'content' => [...$content, $parameters['id']],
             ]);
         }
-        if (!empty($parameters['address'])) $this->updateRecipientAddress($iduser, $idrecipient, $parameters['address']);
+        if (!empty($parameters['address'])) $this->updateRecipientAddress($iduser, $parameters['id'], $parameters['address']);
 
-        return $this->getRecipientData($idrecipient);
+        $members = $this->getFamilyMembers($idfamily, [$iduser]);
+        if (!empty($members))
+            $this->sendData(
+                $members,
+                [
+                    'date' => date('Y-m-d H:i:s'),
+                    'family' => $idfamily,
+                    'recipient' => json_encode($parameters),
+                    'type' => 23,
+                ],
+            );
+        return $this->getRecipientData($parameters['id']);
     }
 
     private function updateRecipientAddress(int $iduser, int $idrecipient, array $address)
@@ -4670,6 +4763,16 @@ trait Gazet
             'type' => 'ii',
             'content' => [$idobject, $idrecipient],
         ]);
+        $family = $this->getRecipientFamily($idrecipient);
+        $this->sendData(
+            $this->getFamilyMembers($family, [$iduser]),
+            [
+                'avatar' => $idobject,
+                'family' => $family,
+                'recipient' => $idrecipient,
+                'type' => 25,
+            ]
+        );
         return $idobject;
     }
 
@@ -4719,7 +4822,7 @@ trait Gazet
         );
     }
 
-    private function updateUser(int $iduser, array $parameters)
+    private function updateUser(array $parameters)
     {
         // TODO: change email or phone with verification process
         $set = [];
@@ -4744,14 +4847,38 @@ trait Gazet
         $this->db->request([
             'query' => 'UPDATE user SET ' . $set . ' WHERE iduser = ? LIMIT 1;',
             'type' => $type . 'i',
-            'content' => [...$content, $iduser],
+            'content' => [...$content, $parameters['id']],
         ]);
         if ($parameters['new']) $this->db->request([
             'query' => 'DELETE FROM new_user WHERE iduser = ? LIMIT 1;',
             'type' => 'i',
-            'content' => [$iduser],
+            'content' => [$parameters['id']],
         ]);
-        return $this->getUserData($iduser);
+        $families = $this->db->request([
+            'query' => 'SELECT idfamily FROM family_has_member WHERE iduser = ?;',
+            'type' => 'i',
+            'content' => [$parameters['id']],
+            'array' => true,
+        ]);
+        if (!empty($families)) {
+            foreach ($families as &$family) $family = $family[0];
+            $members = $this->getFamiliesMembers($families);
+            echo '### families members: ' . json_encode($members) . PHP_EOL;
+            if (!empty($members)) {
+                echo '### send data to families members' . PHP_EOL;
+                $this->sendData(
+                    $members,
+                    [
+                        'date' => date('Y-m-d H:i:s'),
+                        'families' => json_encode($families),
+                        'user' => json_encode($parameters),
+                        'type' => 22,
+                    ]
+                );
+            }
+        }
+
+        return $this->getUserData($parameters['id']);
     }
 
     private function updateUserAvatar(int $iduser, string $key)
@@ -4772,6 +4899,18 @@ trait Gazet
             'array' => true,
         ]);
         if ($oldObject) $this->removeS3Object($oldObject);
+        $families = $this->getUserFamilies($iduser);
+        if (!empty($families))
+            foreach ($families as &$family) $family = $family['id'];
+        $this->sendData(
+            $this->getFamiliesMembers($families, [$iduser]),
+            [
+                'avatar' => $idobject,
+                'families' => json_encode($families),
+                'member' => $iduser,
+                'type' => 24,
+            ]
+        );
         return $idobject;
     }
 
@@ -4853,9 +4992,12 @@ trait Gazet
         $monthly = $this->getMemberMonthly($iduser, $idsubscription);
         if (empty($monthly)) {
             // if no monthly, check if user has single payment(s)
-            $payments = $this->getSubscriptionLastPayments($idsubscription, $iduser);
+            $payments = $this->getSubscriptionLastPayments($idsubscription, ['iduser' => $iduser]);
             if (empty($payments)) return true;
-            foreach ($payments as $payment) $this->refundPayment($payment);
+            foreach ($payments as $payment) {
+                if ($payment['status'] === 2) $this->refundPayment($payment);
+                if ($payment['status'] === 1) $this->cancelPaymentProcess($payment);
+            }
         } else {
             // if user has monthly payment
             if (!$this->cancelMonthlyPayment([...$this->getMonthlyPayment($monthly), 'idmonthly_payment' => $monthly])) return false;
@@ -4979,7 +5121,8 @@ trait Gazet
             || (!$this->userIsMemberOfFamily($iduser, $idfamily) && !$this->userHasFamilyInvitation($iduser, $idfamily) && !$this->userHasFamilyRequest($iduser, $idfamily))
         ) return false;
         $family = [
-            'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
+            'admin' => $this->getFamilyAdmin($idfamily),
+            // 'admin' => $this->userIsAdminOfFamily($iduser, $idfamily),
             'code' => bin2hex($this->getFamilyCode($idfamily)),
             'default' => $this->familyIsDefaultForUser($iduser, $idfamily),
             'id' => $idfamily,
@@ -5067,6 +5210,15 @@ trait Gazet
             'query' => 'SELECT NULL FROM family_request WHERE iduser = ? AND idfamily = ? LIMIT 1;',
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
+        ]));
+    }
+
+    private function userHasMonthly(int $iduser)
+    {
+        return !empty($this->db->request([
+            'query' => 'SELECT NULL FROM monthly_payment WHERE iduser = ? LIMIT 1;',
+            'type' => 'i',
+            'content' => [$iduser],
         ]));
     }
 
@@ -5172,17 +5324,6 @@ trait Gazet
         ]));
     }
 
-    private function userIsReferentInFamily(int $iduser, int $idfamily)
-    {
-        $recipients = $this->db->request([
-            'query' => 'SELECT idrecipient FROM recipient WHERE idfamily = ? AND referent = ?;',
-            'type' => 'ii',
-            'content' => [$idfamily, $iduser],
-            'array' => true,
-        ]);
-        return empty($recipients) ? false : array_column($recipients, 0);
-    }
-
     private function userLikesComment(int $iduser, int $idcomment)
     {
         return !empty($this->db->request([
@@ -5253,8 +5394,9 @@ trait Gazet
             // try remove member from family
             if (!empty($families)) foreach ($families as $family) {
                 if (!$this->familyHasOtherMembers($family['id'], $iduser)) {
-                    $removal = $this->userRemovesFamily($iduser, $family['id']);
-                    if ($removal['state'] !== 0) throw (new Exception('userRemovesAccount: userRemovesFamily: ' . $removal['state']));
+                    if (!$this->userRemovesFamily($iduser, $family['id'])) {
+                        throw (new Exception('userRemovesFamily: user not admin of family to be removed'));
+                    }
                 } else {
                     if ($family['invitation']) {
                         $this->familyInvitationRemove($iduser, $family['id']);
@@ -5263,8 +5405,30 @@ trait Gazet
                         $this->familyRequestRemove($iduser, $family['id']);
                     }
                     if ($family['member'] || $family['admin'] || $family['recipient']) {
-                        $removal = $this->userRemovesMember($iduser, $family['idfamily']);
-                        if ($removal['state'] !== 0) throw (new Exception('userRemovesAccount: userRemovesMember: ' . $removal['state']));
+                        $removal = $this->userRemovesMember($iduser, $family['id']);
+                        if ($removal['state'] !== 0) {
+                            switch ($removal['state']) {
+                                case 1:
+                                    throw (new Exception('userRemovesMember: user not admin of family to remove other member'));
+                                    break;
+                                case 2:
+                                    echo ('### userRemovesAccount: user can\'t be removed while admin of a family.' . PHP_EOL);
+                                    return ['state' => 1];
+                                    break;
+                                case 3:
+                                    echo ('### userRemovesAccount: user can\'t be removed while recipient with active subscription.' . PHP_EOL);
+                                    return ['state' => 2];
+                                    break;
+                                case 4:
+                                    echo ('### userRemovesAccount: user can\'t be removed while referent of a recipient.' . PHP_EOL);
+                                    return ['state' => 3];
+                                    break;
+                                case 5:
+                                    echo ('### userRemovesAccount: user can\'t be removed while having active monthly payment.' . PHP_EOL);
+                                    return ['state' => 4];
+                                    break;
+                            }
+                        }
                     }
                 }
             }
@@ -5286,60 +5450,20 @@ trait Gazet
 
     private function userRemovesFamily(int $iduser, int $idfamily)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return ['state' => -1];
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
         return $this->removeFamily($iduser, $idfamily);
     }
 
     private function userRemovesMember(int $iduser, int $idfamily, int $idmember = null)
     {
         $idmember = $idmember ?? $iduser;
-
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return ['state' => -1];
-        if ($this->userIsAdminOfFamily($idmember, $idfamily)) return ['state' => 1];
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && $iduser !== $idmember) return ['state' => 1];
+        if ($this->userIsAdminOfFamily($idmember, $idfamily)) return ['state' => 2];
         $recipient = $this->userIsRecipientOfFamily($idmember, $idfamily);
-        if ($recipient) {
-            if (!empty($this->getRecipientSubscription($recipient))) return ['state' => 2];
-            else $this->removeRecipient($idfamily, $recipient);
-        }
-        // if user is referent of family
-        $recipients = $this->userIsReferentInFamily($idmember, $idfamily);
-        if ($recipients) {
-            // set admin as referent before user removal
-            $admin = $this->getFamilyAdmin($idfamily);
-            $date = date('Y-m-d H:i:s');
-            $this->db->request([
-                'query' => 'UPDATE recipient SET referent = ? WHERE idrecipient IN (' . implode(',', $recipients) . ');',
-                'type' => 'i',
-                'content' => [$admin],
-            ]);
-            foreach ($recipients as $recipient) {
-                $data = [
-                    'date' => $date,
-                    'family' => $idfamily,
-                    'referent' => $admin,
-                    'recipients' => [$recipient],
-                    'type' => 17,
-                ];
-                $recipientName = $this->getRecipientDisplayName($recipient);
-                $de = preg_match('/^[aeiouy]/i', $recipientName) ? 'd\'' : 'de ';
-                $this->sendNotification(
-                    [$admin],
-                    'Nouveau référent',
-                    'Vous êtes à présent le référent ' . $de . $recipientName . '.',
-                    $data
-                );
-            }
-            $members = $this->getFamilyMembers($idfamily, [$idmember, $admin]);
-            if (!empty($members))
-                $this->sendData($members, [
-                    'date' => $date,
-                    'family' => $idfamily,
-                    'referent' => $admin,
-                    'recipients' => $recipients,
-                    'type' => 17,
-                ]);
-        }
-
+        if ($recipient && $this->checkRecipientsSubscription([$recipient])) return ['state' => 3];
+        $recipients = $this->getReferentRecipients($idmember, $idfamily);
+        if ($recipients && $this->checkRecipientsSubscription($recipients)) return ['state' => 4];
+        if ($this->userHasMonthly($iduser)) return ['state' => 5];
         // remove member from family
         return ['state' => 0, ...$this->removeMember($idmember, $idfamily)];
     }
@@ -5353,8 +5477,8 @@ trait Gazet
 
     private function userRemovesRecipient(int $iduser, int $idfamily, int $idrecipient)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsReferent($iduser, $idrecipient)) return false;
-        if (!empty($this->getRecipientSubscription($idrecipient))) return 1;
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily) && !$this->userIsReferent($iduser, $idrecipient)) return 1;
+        if (!empty($this->getRecipientSubscription($idrecipient))) return 2;
         $displayname = $this->getRecipientDisplayName($idrecipient);
         $this->removeRecipient($idfamily, $idrecipient);
         $data = [
@@ -5372,13 +5496,13 @@ trait Gazet
                 'Le destinataire ' . $displayname . ' a été supprimé de la famille ' . $this->getFamilyName($idfamily) . '.',
                 $data,
             );
-        return true;
+        return 0;
     }
 
     private function userRemovesRecipientAvatar(int $iduser, int $idfamily, int $idrecipient)
     {
         if (!$this->userIsReferent($iduser, $idrecipient) && !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
-        $idobject = $this->removeRecipientAvatar($idrecipient);
+        $idobject = $this->removeRecipientAvatar($iduser, $idrecipient);
         return $idobject;
     }
 
@@ -5561,7 +5685,7 @@ trait Gazet
         $response = [];
         // if member's data modifed and is user
         if (!empty($parameters['user']['id']) && $iduser === $parameters['user']['id']) {
-            $response['user'] = $this->updateUser($iduser, $parameters['user']);
+            $response['user'] = $this->updateUser($parameters['user']);
             $response['user']['id'] = $parameters['user']['id'];
         }
         // if recipient's data modified
@@ -5570,7 +5694,7 @@ trait Gazet
             if ($parameters['recipient']['id'] == null)
                 $response['recipient'] = $this->createRecipient($iduser, $parameters['idfamily'], $parameters['recipient']);
             else {
-                $response['recipient'] = $this->updateRecipient($iduser, $parameters['recipient']['id'], $parameters['recipient']);
+                $response['recipient'] = $this->updateRecipient($iduser, $parameters['recipient']);
                 if (!$response['recipient']) {
                     print('updateMember: FALSE' . PHP_EOL);
                     return false;
