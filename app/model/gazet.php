@@ -669,7 +669,7 @@ trait Gazet
         if (!$this->familyHasRecipients($idfamily)) return false;
         $idrecipients = implode(',', $this->getFamilyRecipients($idfamily));
         return !empty($this->db->request([
-            'query' => "SELECT NULL FROM subscription WHERE idrecipient IN ($idrecipients) AND status != 4 LIMIT 1;",
+            'query' => "SELECT NULL FROM subscription WHERE idrecipient IN ($idrecipients) AND status = 2 LIMIT 1;",
         ]));
     }
 
@@ -2933,29 +2933,11 @@ trait Gazet
 
     /**
      * Mark family for deletion, immediate if no members.
-     * @return int Value > 0 = days before deletion, 0 = deleted, -1 = user not admin, -2 = running subscription
+     * @return int 0 = deleted, 1 = running subscription
      */
     private function removeFamily(int $iduser, int $idfamily)
     {
-        // if no subscription is running for family recipients
-        if ($this->familyHasSubscriptions($idfamily)) return ['state' => -2];
-        // mark family for removal if gazettes (a month) or members (a week), else remove immediatly
-        if ($this->familyHasOtherMembers($iduser, $idfamily)) {
-            $delay = $this->familyHasGazettes($idfamily) ? 31 : 7;
-            $this->db->request([
-                'query' => 'UPDATE family SET end = DATE_ADD(NOW(),INTERVAL ' . $delay . ' DAY) WHERE idfamily = ? LIMIT 1;',
-                'type' => 'i',
-                'content' => [$idfamily],
-            ]);
-            // send notification to members
-            return ['state' => $delay];
-        }
-        $this->db->request([
-            'query' => 'UPDATE family SET end = NOW() WHERE idfamily = ? LIMIT 1;',
-            'type' => 'i',
-            'content' => [$idfamily],
-        ]);
-
+        if ($this->familyHasSubscriptions($idfamily)) return ['state' => 1];
         $this->removeFamilyData($iduser, $idfamily);
         return ['state' => 0, 'default' => $this->getUserDefaultFamily($iduser)];
     }
@@ -5547,8 +5529,7 @@ trait Gazet
     private function userSetPublication(int $iduser, int  $idfamily, array $parameters)
     {
         if (!$this->userIsMemberOfFamily($iduser, $idfamily)) return false;
-        $this->setPublication($iduser, $idfamily, $parameters);
-        return true;
+        return $this->setPublication($iduser, $idfamily, $parameters);
     }
 
     private function userSetPublicationLike(int $iduser, int $idfamily, int $idpublication)
