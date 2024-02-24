@@ -5435,7 +5435,7 @@ trait Gazet
 
     private function userRemovesFamily(int $iduser, int $idfamily)
     {
-        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
+        if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return ['state' => 2];
         return $this->removeFamily($iduser, $idfamily);
     }
 
