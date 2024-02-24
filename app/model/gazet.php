@@ -2954,38 +2954,25 @@ trait Gazet
      */
     private function removeFamilyData(int $iduser, int $idfamily)
     {
-        if (empty($this->db->request([
-            'query' => 'SELECT NULL FROM family WHERE idfamily = ? AND end IS NOT NULL;',
-            'type' => 'i',
-            'content' => [$idfamily],
-        ]))) return false;
-
-        // if family is default for any user, set new default family
-        if ($this->familyIsDefaultForAnyUser($idfamily)) {
-            foreach ($this->db->request([
-                'query' => 'SELECT iduser FROM default_family WHERE idfamily = ?;',
-                'type' => 'i',
-                'content' => [$idfamily],
-                'array' => true,
-            ]) as $user) $this->setOtherFamilyDefault($user[0], $idfamily);
-        }
-
         // if family has recipients, remove them
-        if ($this->familyHasRecipients($idfamily))
-            foreach ($this->getFamilyRecipients($idfamily) as $recipient) $this->removeRecipient($iduser, $recipient);
-
-        // if family has publications, remove them
+        $recipients = $this->getFamilyRecipients($idfamily);
+        if (!empty($recipients))
+            foreach ($recipients as $recipient) $this->removeRecipient($iduser, $recipient);
+        // remove each family member
+        $members = $this->getFamilyMembers($idfamily, [$iduser]);
+        if (!empty($members)) foreach ($members as $member) $this->removeMember($member, $idfamily);
+        // if family has remaining publications, remove them
         $publications = $this->getAllFamilyPublications($idfamily);
-
         if (!empty($publications))
             foreach ($publications as $publication) $this->removePublication($idfamily, $publication);
-
+        // if family is default for admin, set another family if any
+        if ($this->familyIsDefaultForUser($iduser, $idfamily)) $this->setOtherFamilyDefault($iduser, $idfamily);
+        // delete family
         $this->db->request([
             'query' => 'DELETE FROM family WHERE idfamily = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idfamily],
         ]);
-
         return true;
     }
 
