@@ -1062,6 +1062,7 @@ trait Gazet
 
     private function getFamiliesMembers(array $families, array $exclude = [])
     {
+        echo '### getFamiliesMembers()';
         $families = implode(',', $families);
         $where = '';
         if (!empty($exclude)) {
@@ -3343,16 +3344,17 @@ trait Gazet
             'content' => [$iduser],
         ]);
         $families = $this->getUserFamilies($iduser);
-        if (!empty($families))
+        if (!empty($families)) {
             foreach ($families as &$family) $family = $family['id'];
-        $this->sendData(
-            $this->getFamiliesMembers($families, [$iduser]),
-            [
-                'families' => json_encode($families),
-                'member' => $iduser,
-                'type' => 24,
-            ]
-        );
+            $this->sendData(
+                $this->getFamiliesMembers($families, [$iduser]),
+                [
+                    'families' => json_encode($families),
+                    'member' => $iduser,
+                    'type' => 24,
+                ]
+            );
+        }
         return $idobject;
     }
 
@@ -4900,17 +4902,18 @@ trait Gazet
         ]);
         if ($oldObject) $this->removeS3Object($oldObject);
         $families = $this->getUserFamilies($iduser);
-        if (!empty($families))
+        if (!empty($families)) {
             foreach ($families as &$family) $family = $family['id'];
-        $this->sendData(
-            $this->getFamiliesMembers($families, [$iduser]),
-            [
-                'avatar' => $idobject,
-                'families' => json_encode($families),
-                'member' => $iduser,
-                'type' => 24,
-            ]
-        );
+            $this->sendData(
+                $this->getFamiliesMembers($families, [$iduser]),
+                [
+                    'avatar' => $idobject,
+                    'families' => json_encode($families),
+                    'member' => $iduser,
+                    'type' => 24,
+                ]
+            );
+        }
         return $idobject;
     }
 
