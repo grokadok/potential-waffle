@@ -927,13 +927,15 @@ trait Gazet
             'content' => [$newGazette, $parameters['id']],
         ]);
         if ($oldGazette && $oldGazette !== $newGazette) $this->removeS3Object($oldGazette);
+        echo '### Gazette generated';
         // TODO: send notification to family members about gazette generation
-        // $this->sendData($this->getFamilyMembers($parameters['family']), [
-        //     'family' => $parameters['family'],
-        //     'gazette' => $parameters['id'],
-        //     'recipient' => $parameters['recipient'],
-        //     'type' => 20,
-        // ]);
+        $this->sendData($this->getFamilyMembers($parameters['family']), [
+            'family' => $parameters['family'],
+            'gazette' => $parameters['id'],
+            'pdf' => $parameters['key'],
+            'recipient' => $parameters['recipient'],
+            'type' => 27,
+        ]);
     }
 
     /**
@@ -1477,6 +1479,11 @@ trait Gazet
         ]));
     }
 
+    /**
+     * Returns recipient's id for given gazette.
+     * @param int $idgazette
+     * @return int idrecipient
+     */
     private function getGazetteRecipient(int $idgazette)
     {
         return $this->db->request([
@@ -2201,7 +2208,7 @@ trait Gazet
     private function getRecipientGazettes(int $idrecipient)
     {
         return $this->db->request([
-            'query' => 'SELECT idrecipient,idgazette,print_date,printed,cover_mini,pdf,type FROM gazette WHERE idrecipient = ? ORDER BY print_date DESC;',
+            'query' => 'SELECT idrecipient,idgazette,print_date,printed,cover_mini,pdf,status,type FROM gazette WHERE idrecipient = ? ORDER BY print_date DESC;',
             'type' => 'i',
             'content' => [$idrecipient],
         ]);
@@ -3418,9 +3425,9 @@ trait Gazet
         ]);
     }
 
-    private function requestGazetteGen(int $idgazette)
+    private function requestGazetteGen(int $idgazette, int $idfamily = null)
     {
-        print('requesting gazette gen ' . $idgazette . PHP_EOL);
+        echo '### Requesting gazette generation ' . $idgazette . PHP_EOL;
         // get gazette status
         $status = $this->db->request([
             'query' => 'SELECT status FROM gazette WHERE idgazette = ? LIMIT 1;',
@@ -3428,7 +3435,7 @@ trait Gazet
             'content' => [$idgazette],
             'array' => true,
         ])[0][0];
-        if ($status === 1) return; // gazette already requested // TODO: uncomment when testing done
+        if ($status === 1) return; // gazette already requested
         // set gazette status to requested
         $this->db->request([
             'query' => 'UPDATE gazette SET status = 1 WHERE idgazette = ? LIMIT 1;',
@@ -3436,6 +3443,15 @@ trait Gazet
             'content' => [$idgazette],
         ]);
         if ($status === 2) return; // gazette already generating
+        $idrecipient = $this->getGazetteRecipient($idgazette);
+        if (empty($idfamily)) $idfamily = $this->getRecipientFamily($idrecipient);
+        // send notification to family members
+        $this->sendData($this->getFamilyMembers($idfamily), [
+            'family' => $idfamily,
+            'gazette' => $idgazette,
+            'recipient' => $idrecipient,
+            'type' => 26,
+        ]);
         // send request to pdf server
         return $this->pdf->request($idgazette);
     }
@@ -3876,7 +3892,7 @@ trait Gazet
             );
         }
         // update gazette
-        if (!$this->familyHasRecipients($idfamily))
+        if ($this->familyHasRecipients($idfamily))
             $this->setGazettes($idfamily, $publication['created']);
         return $publication['idpublication'];
     }
@@ -4488,16 +4504,12 @@ trait Gazet
             }
         }
 
-        // check for conflicting recipient modifications after update (useless if mods are removed on update)
-        // $this->checkGazetteModifications($idgazette);
-
         // TODO: let admin/referent know of gazette update & overflow
         if ($overflow) {
             // TODO: notification to admin/referent if gazette overflows, and suggest to take a bigger gazette type
         }
 
-        $this->requestGazetteGen($idgazette);
-        // $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
+        $this->requestGazetteGen($idgazette, $idfamily);
     }
 
     private function updatePayment(array $serviceData, array $dbData)
