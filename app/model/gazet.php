@@ -927,8 +927,7 @@ trait Gazet
             'content' => [$newGazette, $parameters['id']],
         ]);
         if ($oldGazette && $oldGazette !== $newGazette) $this->removeS3Object($oldGazette);
-        echo '### Gazette generated';
-        // TODO: send notification to family members about gazette generation
+        echo '### Gazette generated' . PHP_EOL;
         $this->sendData($this->getFamilyMembers($parameters['family']), [
             'family' => $parameters['family'],
             'gazette' => $parameters['id'],

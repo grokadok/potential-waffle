@@ -186,8 +186,6 @@ class FWServer
             }
         } else {
             if ($server["request_method"] === "POST") {
-                print_r($request->header);
-                print_r($request->getContent());
                 if ($request_uri === "/easytransac") {
                     if (in_array($request->header['x-forwarded-for'], explode(',', getenv('EASYTRANSAC_IPS')))) {
                         $this->handleEasyTransacWebhook($request->getContent());
