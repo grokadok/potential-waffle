@@ -4338,7 +4338,7 @@ trait Gazet
         if (!empty($data['cover_full']) && $data['cover_full'] !== $full && !$this->checkPicturePublicationLink($data['cover_full'])) {
             $this->removeS3Object($data['cover_full']);
         }
-        $this->serv->task(['task' => 'pdf', 'idgazette' => $idgazette]);
+        $this->requestGazetteGen($idgazette);
         return;
     }
 
@@ -5652,7 +5652,6 @@ trait Gazet
     {
         if (!$this->userIsReferent($iduser, $this->getGazetteRecipient($idgazette)) && !$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
         $this->updateCover($idgazette, $idcover, $idfull);
-        // TODO: send notifications to family members at gazette generation start and finish
         return true;
     }
 
