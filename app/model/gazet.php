@@ -514,8 +514,8 @@ trait Gazet
             ],
         ]);
 
-        // update gazette
-        $this->setGazettes($idfamily, $recipientData['created']);
+        // create gazette
+        $this->setGazettes($idfamily, $recipientData['created'], $recipientData['idrecipient']);
 
         $data = [
             'recipient' => $recipientData['idrecipient'],
@@ -1653,25 +1653,19 @@ trait Gazet
             // if current day is <= month limit
             $startday = (new DateTime())
                 ->modify('first day of last month')
-                ->modify('+' . ($this->monthLimit) . ' day')
-                ->format('Y-m-d');
-
+                ->modify('+' . ($this->monthLimit) . ' day');
             $endday = (new DateTime())
                 ->modify('first day of this month')
-                ->modify('+' . ($this->monthLimit - 1) . ' day')
-                ->format('Y-m-d');
+                ->modify('+' . ($this->monthLimit - 1) . ' day');
         } else {
             // if current day is > month limit
             $startday = (new DateTime())
                 ->modify('first day of this month')
-                ->modify('+' . ($this->monthLimit) . ' day')
-                ->format('Y-m-d');
-
+                ->modify('+' . ($this->monthLimit) . ' day');
             $endday = (new DateTime())
-                ->modify('last day of this month')
-                ->format('Y-m-d');
+                ->modify('last day of this month');
         }
-        return ['start' => $startday, 'end' => $endday];
+        return ['start' => $startday->format('Y-m-d'), 'end' => $endday->format('Y-m-d')];
     }
 
     private function getPaymentAmount(int $idpayment)
@@ -1824,17 +1818,18 @@ trait Gazet
     }
 
     /**
-     * Returns print date for a given date.
+     * Returns print date for a given publication date.
      * @param string $date
      * @return string Print date in Y-m-d format.
      */
     private function getPrintDate(string $date)
     {
+        $printDate = $this->printDate;
         $day = (int) date('d', strtotime($date));
         $date = new DateTime($date);
-        if ($day < 28) {
-            $date->modify('first day of this month')->modify('+27 days');
-        } else $date->modify('first day of next month')->modify('+27 days');
+        if ($day < $this->monthLimit) {
+            $date->modify('first day of this month')->modify('+' . ($printDate - 1) . ' days');
+        } else $date->modify('first day of next month')->modify('+' . ($printDate - 1) . ' days');
         return $date->format('Y-m-d');
     }
 
@@ -1995,6 +1990,27 @@ trait Gazet
             'content' => [$idpublication],
             'array' => true,
         ])[0][0] ?? false;
+    }
+
+    /**
+     * Returns publications dates window for a given date or current date if null.
+     * @param string $date
+     * @return array
+     */
+    private function getPublicationWindow(string $date = null)
+    {
+        $dateTime = DateTime::createFromFormat('Y-m-d', $date ?? date('Y-m-d'));
+        $dateDay = (int) $dateTime->format('j');
+        $monthLimit = (int) $this->monthLimit;
+
+        if ($dateDay <= $monthLimit) {
+            $end = DateTime::createFromFormat('Y-m-d', $date ?? date('Y-m-d'))->modify('first day of this month')->modify('+' . ($monthLimit - 1) . ' days');
+            $start = DateTime::createFromFormat('Y-m-d', $date ?? date('Y-m-d'))->modify('first day of previous month')->modify('+' . $monthLimit . ' days');
+        } else {
+            $start = DateTime::createFromFormat('Y-m-d', $date ?? date('Y-m-d'))->modify('first day of this month')->modify('+' . $monthLimit . ' days');
+            $end = DateTime::createFromFormat('Y-m-d', $date ?? date('Y-m-d'))->modify('first day of next month')->modify('+' . ($monthLimit - 1) . ' days');
+        }
+        return ['start' => $start->format('Y-m-d'), 'end' => $end->format('Y-m-d')];
     }
 
     /**
@@ -3374,12 +3390,19 @@ trait Gazet
      */
     private function replaceGazetteCover(int $idgazette, int $idobject)
     {
-        $publications = $this->getGazettePublications($idgazette);
-        if (empty($publications)) return $this->db->request([
+        $idpublications = $this->getGazettePublications($idgazette);
+        if (empty($idpublications)) return $this->db->request([
             'query' => 'UPDATE gazette SET cover_picture = NULL, cover_full = NULL WHERE idgazette = ? LIMIT 1;',
             'type' => 'i',
             'content' => [$idgazette],
         ]);
+        $publications = [];
+        foreach ($idpublications as $idpublication) {
+            $publications[] = [
+                'idpublication' => $idpublication,
+                'likes' => $this->getPublicationLikesCount($idpublication),
+            ];
+        }
         // order publications by likes
         usort($publications, function ($a, $b) {
             return $b['likes'] - $a['likes'];
@@ -3387,7 +3410,7 @@ trait Gazet
 
         $cover = null;
         for ($i = 0; $i < count($publications); $i++) {
-            $pictures = $this->getPublicationPictures($publications[$i]);
+            $pictures = $this->getPublicationPictures($publications[$i]['idpublication']);
             if (!empty($pictures)) {
                 for ($p = 0; $p < count($pictures); $p++) {
                     $picture = $this->getPictureData(["crop" => $pictures[$p]['crop']]);
@@ -3608,13 +3631,13 @@ trait Gazet
     /**
      * Create and update gazette(s) for family according to subscription modifications.
      */
-    private function setGazettes(int $idfamily, string $date)
+    private function setGazettes(int $idfamily, string $date, int $idrecipient = null)
     {
         // get print date
         $printDate = $this->getPrintDate($date);
         print("@@@ print date: " . $printDate . PHP_EOL);
         // for each recipient, create or update gazette
-        foreach ($this->getFamilyRecipients($idfamily) as $recipient) {
+        foreach (($idrecipient === null ? $this->getFamilyRecipients($idfamily) : [$idrecipient]) as $recipient) {
             // get gazette id
             $idgazette = $this->db->request([
                 'query' => 'SELECT idgazette FROM gazette WHERE idrecipient = ? AND print_date = ? LIMIT 1;',
@@ -4334,6 +4357,8 @@ trait Gazet
         $idfamily = $this->getRecipientFamily($gazette['idrecipient']);
         // get gazette_type data
         $type = $this->getGazetteTypeData($gazette['type']);
+        // get publication date limit
+        $window = $this->getPublicationWindow(date('Y-m-01', strtotime($gazette['print_date'])));
 
         // remove gazettes pages
         $this->db->request([
@@ -4342,7 +4367,6 @@ trait Gazet
             'content' => [$idgazette],
         ]);
         // remove gazette cover writers
-        // TODO: keep same writers if they are still in gazette
         $this->db->request([
             'query' => 'DELETE FROM gazette_writer WHERE idgazette = ?;',
             'type' => 'i',
@@ -4354,14 +4378,17 @@ trait Gazet
             'query' => 'SELECT idpublication,author,idlayout,created,full_page,global
                 FROM publication
                 WHERE idfamily = ?
-                AND created >= DATE_SUB(?, INTERVAL 1 MONTH)
-                AND created < ?
+                AND created >= ?
+                AND created <= ?
                 ORDER BY created ASC;',
             'type' => 'iss',
-            'content' => [$idfamily, $gazette['print_date'], $gazette['print_date']],
+            'content' => [$idfamily, $window['start'], $window['end']],
         ]);
         // if no publications at all, delete gazette
-        if (empty($publications)) return $this->removeGazette($idgazette);
+        if (empty($publications)) {
+            echo '### No publications for gazette ' . $idgazette . ', deleting. ###' . PHP_EOL;
+            return $this->removeGazette($idgazette);
+        }
         $halfpages = 0;
         // remove publications not for this recipient, get likes and count half pages
         $pub = 0;
@@ -4657,6 +4684,9 @@ trait Gazet
             ]);
         }
         if (!empty($parameters['address'])) $this->updateRecipientAddress($iduser, $parameters['id'], $parameters['address']);
+
+        // update gazette 
+        $this->setGazettes($idfamily, date('Y-m-d H:i:s'), $parameters['id']);
 
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($members))
@@ -5698,8 +5728,6 @@ trait Gazet
         $this->updatePublication($parameters['idpublication'], $parameters);
         $members = $this->getFamilyMembers($idfamily, [$iduser]);
         if (!empty($parameters['layout'])) $parameters['layout'] = ['identifier' => $parameters['layout']];
-        // TODO: if publication private, don't send to other members the updates
-        // TODO: handle publication update notification handling client side with new images
         if (!empty($members))
             $this->sendData($members, [
                 'family' => $idfamily,

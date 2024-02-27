@@ -38,8 +38,6 @@ class PdfGenerator
                 CURLOPT_HTTPHEADER => [
                     'Content-Type: application/json',
                     'Api-Authorization: ' . $this->token,
-                    // 'CF-Access-Client-Id: ' . getenv('CF_ACCESS_CLIENT_ID'),
-                    // 'CF-Access-Client-Secret: ' . getenv('CF_ACCESS_CLIENT_SECRET'),
                 ]
             ]);
             $result = curl_exec($ch);
