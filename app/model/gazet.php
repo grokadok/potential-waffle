@@ -161,7 +161,7 @@ trait Gazet
     {
         $window = $this->getPaymentWindow();
         return !empty($this->db->request([
-            'query' => 'SELECT NULL FROM payment WHERE idsubscription = ? AND status = 2 AND updated > ' . $window['start'] . ' AND updated < ' . $window['end'] . ' LIMIT 1;',
+            'query' => 'SELECT NULL FROM payment WHERE idsubscription = ? AND status = 2 AND updated >= ' . $window['start'] . ' AND updated < ' . $window['end'] . ' LIMIT 1;',
             'type' => 'i',
             'content' => [$idsubscription],
         ]));
@@ -357,7 +357,7 @@ trait Gazet
             iduser = ? AND 
             status = 2 AND
             updated >= ? AND
-            updated <= ?
+            updated < ?
             LIMIT 1;',
             'type' => 'iiss',
             'content' => [$idsubscription, $iduser, $window['start'], $window['end']],
@@ -1610,7 +1610,7 @@ trait Gazet
     {
         $window = $this->getPaymentWindow();
         return $this->db->request([
-            'query' => 'SELECT idpayment,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idmonthly_payment = ? AND updated >= ? AND updated <= ? LIMIT 1;',
+            'query' => 'SELECT idpayment,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idmonthly_payment = ? AND updated >= ? AND updated < ? LIMIT 1;',
             'type' => 'iss',
             'content' => [$idmonthlypayment, $window['start'], $window['end']],
         ])[0] ?? false;
@@ -1655,14 +1655,14 @@ trait Gazet
                 ->modify('+' . ($this->monthLimit) . ' day');
             $endday = (new DateTime())
                 ->modify('first day of this month')
-                ->modify('+' . ($this->monthLimit - 1) . ' day');
+                ->modify('+' . ($this->monthLimit) . ' day');
         } else {
             // if current day is > month limit
             $startday = (new DateTime())
                 ->modify('first day of this month')
                 ->modify('+' . ($this->monthLimit) . ' day');
             $endday = (new DateTime())
-                ->modify('last day of this month');
+                ->modify('first day of next month');
         }
         return ['start' => $startday->format('Y-m-d'), 'end' => $endday->format('Y-m-d')];
     }
@@ -2367,13 +2367,17 @@ trait Gazet
     private function getSubscriptionLastPayments(int $idsubscription, array $params = [])
     {
         $window = $this->getPaymentWindow();
+        echo '### window:' . PHP_EOL;
+        print_r($window);
         $user = !empty($params['iduser']) ? 'AND iduser = ' . $params['iduser'] . ' ' : '';
         $status = !empty($params['captured']) ? '= 2' : '< 3';
         $payments = $this->db->request([
-            'query' => 'SELECT idpayment,iduser,idsubscription,request_id,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idsubscription = ? AND status ' . $status . ' ' . $user . 'AND updated >= ? AND updated <= ?;',
+            'query' => 'SELECT idpayment,iduser,idsubscription,request_id,transaction_id,idpayment_type,idmonthly_payment,amount,refund,status FROM payment WHERE idsubscription = ? AND status ' . $status . ' ' . $user . 'AND updated >= ? AND updated < ?;',
             'type' => 'iss',
             'content' => [$idsubscription, $window['start'], $window['end']],
         ]);
+        echo '### payments:' . PHP_EOL;
+        print_r($payments);
         return $payments;
     }
 
