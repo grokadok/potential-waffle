@@ -2398,7 +2398,13 @@ trait Gazet
         return $members;
     }
 
-    private function getSubscriptionShares(int $iduser, int $idrecipient)
+    private function userGetSubscriptionShares(int $iduser, int $idrecipient)
+    {
+        if (!$this->userIsMemberOfFamily($iduser, $this->getRecipientFamily($idrecipient))) return false;
+        return $this->getSubscriptionShares($idrecipient, $iduser);
+    }
+
+    private function getSubscriptionShares(int $idrecipient, int $iduser = null)
     {
         $subscription = $this->getRecipientSubscription($idrecipient);
         if (empty($subscription) || $subscription['status'] !== 2) {
@@ -2424,7 +2430,7 @@ trait Gazet
                     $payment['status'] === 2)
             ) {
                 $membersShare += $payment['amount'] - $payment['refund'];
-                if ($payment['iduser'] === $iduser) $userShare = $payment['amount'] - $payment['refund'];
+                if (isset($iduser) && $payment['iduser'] === $iduser) $userShare = $payment['amount'] - $payment['refund'];
             }
         }
         return [
@@ -4587,7 +4593,7 @@ trait Gazet
                     'member' => $dbData['iduser'],
                     'recipient' => $recipient,
                     'share' => $dbData['amount'],
-                    'total_share' => $this->getSubscriptionShares($dbData['iduser'], $recipient)['members'],
+                    'total_share' => $this->getSubscriptionShares($recipient)['members'],
                     'type' => 21,
                 ],
             );
@@ -5029,7 +5035,7 @@ trait Gazet
                 'member' => $iduser,
                 'recipient' => $idrecipient,
                 'share' => 0,
-                'total_share' => $this->getSubscriptionShares($iduser, $idrecipient)['members'],
+                'total_share' => $this->getSubscriptionShares($idrecipient)['members'],
                 'type' => 21,
             ],
         );
@@ -5120,6 +5126,13 @@ trait Gazet
         foreach ($families as &$family) {
             if (empty($family['invitation']) && empty($family['request'])) {
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
+                foreach ($family['recipients'] as &$recipient) {
+                    if ($recipient['subscription']['status'] === 2) {
+                        $shares = $this->getSubscriptionShares($recipient['idrecipient'], $iduser);
+                        $recipient['subscription']['share'] = $shares['user'];
+                        $recipient['subscription']['members_share'] = $shares['members'];
+                    }
+                }
                 $family['members'] = $this->getFamilyMembersData($family['id']); // get members
                 if ($this->userIsAdminOfFamily($iduser, $family['id'])) {
                     $family['invitations'] = $this->getFamilyInvitations($family['id']);

@@ -194,7 +194,7 @@ trait Http
             /////////////////////////////////////////////////////
 
             if ($f === 12) {
-                $responseContent = ['f' => 12, 'shares' => $this->getSubscriptionShares($iduser, $post['i'])];
+                $responseContent = ['f' => 12, 'shares' => $this->userGetSubscriptionShares($iduser, $post['i'])];
             }
 
             /////////////////////////////////////////////////////
