@@ -5490,7 +5490,7 @@ trait Gazet
         if ($recipient && $this->checkRecipientsSubscription([$recipient])) return ['state' => 3];
         $recipients = $this->getReferentRecipients($idmember, $idfamily);
         if ($recipients && $this->checkRecipientsSubscription($recipients)) return ['state' => 4];
-        if ($this->userHasMonthly($iduser)) return ['state' => 5];
+        if ($this->userHasMonthly($idmember)) return ['state' => 5];
         // remove member from family
         return ['state' => 0, ...$this->removeMember($idmember, $idfamily)];
     }
