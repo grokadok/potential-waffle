@@ -5090,7 +5090,7 @@ trait Gazet
         $this->familyInvitationRemove($invitee, $idfamily); // remove familyInvitation
         $data = [
             'family' => $idfamily,
-            'invitee' => $invitee,
+            'user' => $invitee,
             'type' => 13,
         ];
         // send notification to invitee
