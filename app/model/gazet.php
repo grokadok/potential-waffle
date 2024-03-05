@@ -5089,7 +5089,7 @@ trait Gazet
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if not admin of family, false
         // remove invitation
         $this->db->request([
-            'query' => 'DELETE FROM invitation WHERE idfamily = ? AND invitee = ?;',
+            'query' => 'DELETE FROM family_invitation WHERE idfamily = ? AND invitee = ?;',
             'type' => '',
             'content' => [],
             'array' => true,
