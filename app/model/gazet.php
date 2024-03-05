@@ -5087,13 +5087,7 @@ trait Gazet
     {
         if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if not admin of family, false
-        // remove invitation
-        $this->db->request([
-            'query' => 'DELETE FROM family_invitation WHERE idfamily = ? AND invitee = ?;',
-            'type' => '',
-            'content' => [],
-            'array' => true,
-        ]);
+        $this->familyInvitationRemove($invitee, $idfamily); // remove familyInvitation
         $data = [
             'family' => $idfamily,
             'invitee' => $invitee,
