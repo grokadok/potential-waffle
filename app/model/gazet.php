@@ -14,6 +14,8 @@ trait Gazet
      */
     private function addUserToFamily(int $iduser, int $idfamily)
     {
+        $this->familyInvitationRemove($iduser, $idfamily); // remove familyInvitation
+        $this->familyRequestRemove($iduser, $idfamily); // remove family request
         $name = $this->getAvailableFamilyName($iduser, $idfamily, $this->getFamilyName($idfamily)); // sets family display name according to user's family display names availability
         $this->db->request([ // insert into family members
             'query' => 'INSERT INTO family_has_member (idfamily, iduser, display_name) VALUES (?,?,?);',
@@ -687,18 +689,6 @@ trait Gazet
     }
 
     /**
-     * Adds user to family and removes familyInvitation. Returns false if user already member.
-     */
-    private function familyInvitationFinalize($iduser, $idfamily)
-    {
-        $this->familyInvitationRemove($iduser, $idfamily); // remove familyInvitation
-        $this->familyRequestRemove($iduser, $idfamily); // remove family request
-        if ($this->userIsMemberOfFamily($iduser, $idfamily)) return false;
-        $this->addUserToFamily($iduser, $idfamily);
-        return true;
-    }
-
-    /**
      * Returns acceptation status of familyInvitation for given user and family, false if no familyInvitation.
      * @return int|false
      */
@@ -777,9 +767,10 @@ trait Gazet
         if (!$this->userIsMemberOfFamily($requester, $idfamily)) {
             $this->addUserToFamily($requester, $idfamily); // add requester to family
             // $familyName = $this->getFamilyName($idfamily);
+            // TODO: send data to requester
             // $data = [
             //     'family' => $idfamily,
-            //     'type' => 10,
+            //     'type' => xx,
             //     'user'=>$requester,
             // ];
             // $this->sendNotification(
@@ -790,6 +781,13 @@ trait Gazet
             // );
             // $this->sendData([$iduser], $data);
             // TODO: send push to family members
+            // $members = $this->getFamilyMembers($idfamily, [$iduser]);
+            // $this->sendNotification(
+            //     $members,
+            //     'Nouveau membre',
+            //     $this->getUserName($requester) . ' a rejoint la famille ' . $familyName . '.',
+            //     $data
+            // );
 
         }
         $this->familyRequestRemove($requester, $idfamily);
@@ -800,20 +798,20 @@ trait Gazet
     {
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false;
         $this->familyRequestRemove($idrequester, $idfamily);
-        $data = [
-            'user' => $idrequester,
-            'family' => $idfamily,
-            'type' => 10,
-        ];
-        // send notification to requester
-        $this->sendNotification(
-            [$idrequester],
-            'Adhésion refusée',
-            'Votre demande d\'adhésion à la famille ' . $this->getFamilyName($idfamily) . ' a été refusée.',
-            $data
-        );
-        // send data to admin
-        $this->sendData([$iduser], $data);
+        // TODO: send notification to requester
+        // $data = [
+        //     'user' => $idrequester,
+        //     'family' => $idfamily,
+        //     'type' => xx,
+        // ];
+        // $this->sendNotification(
+        //     [$idrequester],
+        //     'Adhésion refusée',
+        //     'Votre demande d\'adhésion à la famille ' . $this->getFamilyName($idfamily) . ' a été refusée.',
+        //     $data
+        // );
+        // TODO: send data to admin
+        // $this->sendData([$iduser], $data);
         return $this->userGetFamilyData($iduser, $idfamily);
     }
 
@@ -824,7 +822,6 @@ trait Gazet
             'type' => 'ii',
             'content' => [$iduser, $idfamily],
         ]);
-        return true;
     }
 
     /**
@@ -2367,8 +2364,6 @@ trait Gazet
     private function getSubscriptionLastPayments(int $idsubscription, array $params = [])
     {
         $window = $this->getPaymentWindow();
-        echo '### window:' . PHP_EOL;
-        print_r($window);
         $user = !empty($params['iduser']) ? 'AND iduser = ' . $params['iduser'] . ' ' : '';
         $status = !empty($params['captured']) ? '= 2' : '< 3';
         $payments = $this->db->request([
@@ -2376,8 +2371,6 @@ trait Gazet
             'type' => 'iss',
             'content' => [$idsubscription, $window['start'], $window['end']],
         ]);
-        echo '### payments:' . PHP_EOL;
-        print_r($payments);
         return $payments;
     }
 
@@ -4970,7 +4963,7 @@ trait Gazet
             return false;
         }
         if (!$this->familyInvitationIsApproved($iduser, $idfamily)) {
-            $this->db->request([ // else set accepted
+            $this->db->request([
                 'query' => 'UPDATE family_invitation SET accepted = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
                 'type' => 'ii',
                 'content' => [$idfamily, $iduser],
@@ -4987,7 +4980,7 @@ trait Gazet
             );
             return ['state' => '0'];
         }
-        $this->familyInvitationFinalize($iduser, $idfamily); // finalize familyInvitation process
+        $this->addUserToFamily($iduser, $idfamily);
         return ['data' => $this->userGetFamilyData($iduser, $idfamily), 'state' => '1'];
     }
 
@@ -4998,14 +4991,25 @@ trait Gazet
     {
         if (!$this->familyInvitationExist($invitee, $idfamily)) return false; // if invitation doesn't exist, false
         if (!$this->userIsAdminOfFamily($iduser, $idfamily)) return false; // if admin of family, false
-        $this->familyInvitationIsAccepted($invitee, $idfamily) // if accepted
-            ? $this->familyInvitationFinalize($iduser, $idfamily) // finalize familyInvitation process
-            : $this->db->request([ // else set approved
+        if (!$this->familyInvitationIsAccepted($invitee, $idfamily)) {
+            $this->db->request([
                 'query' => 'UPDATE family_invitation SET approved = 1 WHERE idfamily = ? AND invitee = ? LIMIT 1;',
                 'type' => 'ii',
                 'content' => [$idfamily, $invitee],
             ]);
-        return true;
+            $data = [
+                'family' => $idfamily,
+                'type' => 10,
+                'user' => $invitee,
+            ];
+            $this->sendData(
+                [$iduser, $invitee],
+                $data
+            );
+            return ['state' => '0'];
+        }
+        $this->addUserToFamily($iduser, $idfamily);
+        return ['data' => $this->userGetFamilyData($iduser, $idfamily), 'state' => '1'];
     }
 
     private function userCancelParticipation(int $iduser, int $idrecipient)
@@ -5382,7 +5386,7 @@ trait Gazet
         $requestId = $data['request_id'];
         $payment = $this->getPaymentFromRequest($requestId);
         $payment['idpayment_service'] = $service;
-        print('### userUpdatePayment: ' . json_encode($payment) . PHP_EOL);
+        echo '### userUpdatePayment: ' . json_encode($payment) . PHP_EOL;
         // if payment doesn't exist or user is not owner, return false
         if (!$payment || $payment['iduser'] !== $iduser) return false;
         // if payment not updated from service, update it
@@ -5396,7 +5400,6 @@ trait Gazet
     private function userRefusesInvitation($iduser, $idfamily)
     {
         if (!$this->familyInvitationExist($iduser, $idfamily)) return false;
-        // TODO: invitation refusal: notify inviter && admin
         $this->familyInvitationRemove($iduser, $idfamily);
         $admin = $this->getFamilyAdmin($idfamily);
         $userName = $this->getUserName($iduser);
