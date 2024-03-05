@@ -2231,7 +2231,7 @@ trait Gazet
 
     /**
      * Returns active or pending subscription id and type for given recipient.
-     * @return array|false
+     * @return array
      */
     private function getRecipientSubscription(int $idrecipient)
     {
@@ -4345,7 +4345,7 @@ trait Gazet
         if (!empty($data['cover_picture']) && $data['cover_picture'] !== $cover && !$this->checkPicturePublicationLink($data['cover_picture'])) {
             $this->removeS3Object($data['cover_picture']);
         }
-        if (!empty($data['cover_full']) && $data['cover_full'] !== $full && !$this->checkPicturePublicationLink($data['cover_full'])) {
+        if (!empty($data['cover_full']) && $data['cover_full'] !== $data['cover_picture'] && $data['cover_full'] !== $full && !$this->checkPicturePublicationLink($data['cover_full'])) {
             $this->removeS3Object($data['cover_full']);
         }
         $this->requestGazetteGen($idgazette);
@@ -5127,7 +5127,7 @@ trait Gazet
             if (empty($family['invitation']) && empty($family['request'])) {
                 $family['recipients'] = $this->getFamilyRecipientsData($family['id']); // get recipients + active subscription
                 foreach ($family['recipients'] as &$recipient) {
-                    if ($recipient['subscription']['status'] === 2) {
+                    if (!empty($recipient['subscription']) && $recipient['subscription']['status'] === 2) {
                         $shares = $this->getSubscriptionShares($recipient['idrecipient'], $iduser);
                         $recipient['subscription']['share'] = $shares['user'];
                         $recipient['subscription']['members_share'] = $shares['members'];
@@ -5715,6 +5715,9 @@ trait Gazet
         if (!empty($parameters['user']['id']) && $iduser === $parameters['user']['id']) {
             $response['user'] = $this->updateUser($parameters['user']);
             $response['user']['id'] = $parameters['user']['id'];
+            // TODO: update user email procedure
+            // check if email not attributed to other user
+            // if not, send verification email with link to apply modification
         }
         // if recipient's data modified
         if (!empty($parameters['recipient'])) {
