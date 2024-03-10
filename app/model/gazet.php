@@ -5384,12 +5384,13 @@ trait Gazet
         $payment = $this->getPaymentFromRequest($requestId);
         $payment['idpayment_service'] = $service;
         echo '### userUpdatePayment: ' . json_encode($payment) . PHP_EOL;
-        // if payment doesn't exist or user is not owner, return false
         if (!$payment || $payment['iduser'] !== $iduser) return false;
-        // if payment not updated from service, update it
         if ($payment['status'] === $status) {
             echo '### userUpdatePayment: status already updated' . PHP_EOL;
-            return $status;
+            return [
+                'status' => $status,
+                ...$this->getSubscriptionShares($this->getSubscriptionRecipient($payment['idsubscription']), $iduser)
+            ];
         }
         return $this->updatePayment($data, $payment);
     }
