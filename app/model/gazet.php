@@ -3813,7 +3813,7 @@ trait Gazet
         echo '### Transaction with request_id: ' . $data['RequestId'] . ' found in database, updating. ###' . PHP_EOL;
         $payment['idpayment_service'] = $this->getPaymentServiceFromType($payment['idpayment_type']);
         echo '### userUpdatePayment: ' . json_encode($payment) . PHP_EOL;
-        return $this->updatePayment([
+        $this->updatePayment([
             'original_request_id' => $data['OriginalRequestId'] ?? null,
             'original_tid' => $data['OriginalPaymentTid'] ?? null,
             'rebill' => $data['Rebill'] === 'yes',
@@ -4570,6 +4570,7 @@ trait Gazet
         ]);
         // update subscription if user is referent
         $recipient = $this->getSubscriptionRecipient($dbData['idsubscription']);
+        $shares = $this->getSubscriptionShares($recipient);
         if (
             $dbData['iduser'] === $this->getReferent($recipient)
         ) {
@@ -4586,13 +4587,15 @@ trait Gazet
                     'member' => $dbData['iduser'],
                     'recipient' => $recipient,
                     'share' => $dbData['amount'],
-                    'total_share' => $this->getSubscriptionShares($recipient)['members'],
+                    'total_share' => $shares['members'],
                     'type' => 21,
                 ],
             );
         }
-        // return status
-        return $serviceData['status'];
+        return [
+            'status' => $serviceData['status'],
+            ...$shares,
+        ];
     }
 
     private function updatePublication(int $idpublication, array $parameters)

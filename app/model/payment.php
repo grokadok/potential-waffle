@@ -20,7 +20,7 @@ class Payment
         $this->easytransac_api_key = getenv('EASYTRANSAC_API_KEY');
         EasyTransac\Core\Services::getInstance()->provideAPIKey($this->easytransac_api_key);
         EasyTransac\Core\Services::getInstance()->setRequestTimeout(30);
-        EasyTransac\Core\Services::getInstance()->setDebug(true);
+        EasyTransac\Core\Services::getInstance()->setDebug(getenv('CELLAR_ADDON_BUCKET') === 'gazetdev');
         echo '#### Payment initialized ####' . PHP_EOL;
     }
 
