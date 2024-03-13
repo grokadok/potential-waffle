@@ -3765,9 +3765,25 @@ trait Gazet
                         'content' => [$data['Status'], $payment['idpayment']],
                     ]);
                 }
-                return $data['Status'];
+                return;
             }
             $originalPayment = $this->getPaymentFromTid($data['OriginalPaymentTid']);
+            // if payment not found
+            if (empty($originalPayment)) {
+                echo '### ERROR: Original payment with transaction ID: ' . $data['OriginalPaymentTid'] . ' not found in database. ###' . PHP_EOL;
+                // cancel recurring payment
+                if (!$this->payment->cancelSubscription([
+                    'service' => 1,
+                    'transaction_id' => $data['TransactionId'],
+                ])) echo '### ERROR: Cancel subscription process failed on service side for Tid: ' . $data['TransactionId'] . '. ###' . PHP_EOL;
+                // refund payment
+                if (!$this->payment->refund([
+                    'service' => 1,
+                    'transaction_id' => $data['TransactionId'],
+                    'reason' => 'Remboursement La Gazet',
+                ])) echo '### ERROR: Refund process failed on service side for Tid: ' . $data['TransactionId'] . '. ###' . PHP_EOL;
+                return;
+            }
             $this->db->request([
                 'query' => 'INSERT INTO payment (
                             iduser,
@@ -3792,7 +3808,7 @@ trait Gazet
                 ],
             ]);
             echo '### Rebill payment with transaction ID: ' . $data['Tid'] . ' created. ###' . PHP_EOL;
-            return $data['Status'];
+            return;
         }
         $payment = $this->getPaymentFromRequest($data['RequestId']);
         if (!$payment) {
@@ -3805,7 +3821,7 @@ trait Gazet
                 //     'transaction_id' => $data['TransactionId'],
                 //     'reason' => 'Remboursement La Gazet',
                 // ]);
-                return false;
+                return;
             }
         }
         if ($data['Status'] === $payment['status']) return $data['Status'];
