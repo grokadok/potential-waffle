@@ -3770,7 +3770,7 @@ trait Gazet
             $originalPayment = $this->getPaymentFromTid($data['OriginalPaymentTid']);
             // if payment not found
             if (empty($originalPayment)) {
-                echo '### ERROR: Original payment with transaction ID: ' . $data['OriginalPaymentTid'] . ' not found in database. ###' . PHP_EOL;
+                echo '### ERROR: Original payment with transaction ID: ' . $data['OriginalPaymentTid'] . ' not found in database, cancelling and refunding ' . $data['TransactionId'] . '. ###' . PHP_EOL;
                 // cancel recurring payment
                 if (!$this->payment->cancelSubscription([
                     'service' => 1,

@@ -41,6 +41,10 @@ class PdfGenerator
                 ]
             ]);
             $result = curl_exec($ch);
+            // if response is not 200, throw exception
+            if (curl_getinfo($ch, CURLINFO_HTTP_CODE) !== 200) {
+                throw new \Exception('PdfGen request failed: ' . $result);
+            }
             curl_close($ch);
             return $result;
         } catch (\Throwable $th) {
