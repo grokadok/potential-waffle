@@ -1373,7 +1373,7 @@ trait Gazet
     {
         $pages = [];
         foreach ($this->db->request([
-            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND manual = 0;',
+            'query' => 'SELECT page_num,place,idpublication,idgame,idsong FROM gazette_page WHERE idgazette = ? AND gazette_page.manual = 0;',
             'type' => 'i',
             'content' => [$idgazette],
         ]) as $place) {

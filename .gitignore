@@ -15,3 +15,4 @@ ssl.*
 !/server/server.php
 !/server/composer.json
 **/.DS_Store
+/*.tar
